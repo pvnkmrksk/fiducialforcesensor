@@ -51,6 +51,14 @@ import numpy as np
 import logging
 
 
+#! /usr/local/bin/python3
+import zmq
+import time
+
+context = zmq.Context()
+socket = context.socket(zmq.PUB)
+socket.bind("tcp://*:12345")
+
 # ------------------------------------
 # Run Flags
 
@@ -403,13 +411,17 @@ class ArucoThread(threading.Thread):
                 # two tags (maybe?)
 
                 # NOTE: we are exponential filtering thetas but not distances
-                calcDists = tvec - zeroDists
+                calcDists = 100 * (tvec - zeroDists)
                 calcThetas = out - zeroThetas
                 # Average between the two tags
                 # avgCalcDists = np.average(calcDists, axis=0)
                 # avgCalcThetas = np.average(calcThetas, axis=0)
                 self.logger.info(f"{calcDists.flatten()}  {calcThetas}")
+                message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]}"  #  {calcThetas[0][0]}  {calcThetas[0][1]}  {calcThetas[0][2]}"
 
+                socket.send_string(message)
+                # print(message)
+                # time.sleep(0.05)
                 # print(tvec[1]* 1000)
 
                 # print('shapes', [x.shape for x in [zeroThetas, out, calcThetas,
