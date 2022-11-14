@@ -417,7 +417,8 @@ class ArucoThread(threading.Thread):
                 # avgCalcDists = np.average(calcDists, axis=0)
                 # avgCalcThetas = np.average(calcThetas, axis=0)
                 self.logger.info(f"{calcDists.flatten()}  {calcThetas}")
-                message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]}"  #  {calcThetas[0][0]}  {calcThetas[0][1]}  {calcThetas[0][2]}"
+                # message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]}"  #  {calcThetas[0][0]}  {calcThetas[0][1]}  {calcThetas[0][2]}"
+                message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]} {calcThetas[0][0]} {calcThetas[0][1]} {calcThetas[0][2]}"
 
                 socket.send_string(message)
                 # print(message)
