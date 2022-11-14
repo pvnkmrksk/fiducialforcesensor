@@ -30,13 +30,13 @@ Three files, a .jpg screenshot of the intiial view will be saved, as well as two
 import cv2
 import cv2.aruco as aruco
 
-import serial
+# import serial
 import sys
 import signal
 import logging
 import pprint
 
-import optoforcelibrary as optoforce
+# import optoforcelibrary as optoforce
 import copy
 
 
@@ -63,7 +63,7 @@ import logging
 arucoFlag = True
 numTags = 1
 optoFlag = False
-writeFlag = True  # write to CSV file?
+writeFlag = False  # True  # write to CSV file?
 
 # ------------------------------------
 # Data recording constants
@@ -88,7 +88,7 @@ optoforce_port = "/dev/ttyACM0"
 # ------------------------------------
 # Camera Constants
 # NOTE: Make sure to change this to match your prototype!
-tag_size = 0.0038 # in meters
+tag_size = 0.0038  # in meters
 
 width = 640
 height = 480
@@ -166,60 +166,60 @@ def rotationMatrixToEulerAngles(R):
 # Methods to read from optoforce
 
 
-class OptoThread(threading.Thread):
-    def __init__(self, inittime, fname):
+# class OptoThread(threading.Thread):
+#     def __init__(self, inittime, fname):
 
-        threading.Thread.__init__(self)
+#         threading.Thread.__init__(self)
 
-        global logger
-        self.logger = logger
+#         global logger
+#         self.logger = logger
 
-        self.inittime = inittime
-        self.fname = fname
+#         self.inittime = inittime
+#         self.fname = fname
 
-        optoforce_sensor_type = "s-ch/6-axis"
-        starting_index = 0
-        scaling_factors = [[1, 1, 1, 1, 1, 1]]  # one per axis
-        # if len(sys.argv) > 1:
-        # port = "/dev/" + sys.argv[1]
-        try:
-            self.driver = optoforce.OptoforceDriver(
-                optoforce_port, optoforce_sensor_type, scaling_factors
-            )
-            self.logger.info("Opened optoforce")
-        except serial.SerialException as e:
-            self.logger.debug("failed to open optoforce serial port!")
-            raise
+#         optoforce_sensor_type = "s-ch/6-axis"
+#         starting_index = 0
+#         scaling_factors = [[1, 1, 1, 1, 1, 1]]  # one per axis
+#         # if len(sys.argv) > 1:
+#         # port = "/dev/" + sys.argv[1]
+#         try:
+#             self.driver = optoforce.OptoforceDriver(
+#                 optoforce_port, optoforce_sensor_type, scaling_factors
+#             )
+#             self.logger.info("Opened optoforce")
+#         except serial.SerialException as e:
+#             self.logger.debug("failed to open optoforce serial port!")
+#             raise
 
-    def run(self):
-        time.sleep(2)  # wait for opencv tag to initialize
-        while True:
-            optotime = time.time()
-            self.optodata = self.driver.read()
+#     def run(self):
+#         time.sleep(2)  # wait for opencv tag to initialize
+#         while True:
+#             optotime = time.time()
+#             self.optodata = self.driver.read()
 
-            if isinstance(self.optodata, optoforce.OptoforceData):  # UNTESTED
-                opto_data_str = (
-                    "Optoforce time, xyz, yawpitchroll; "
-                    + str(optotime - self.inittime)
-                    + "; "
-                    + "; ".join([str(o) for o in self.optodata.force[0]])
-                    + "\n"
-                )
-                a = ["{0: <8}".format(x) for x in self.optodata.force[0]]
-                # pprint.pprint(' '.join(a))  # NOTE
+#             if isinstance(self.optodata, optoforce.OptoforceData):  # UNTESTED
+#                 opto_data_str = (
+#                     "Optoforce time, xyz, yawpitchroll; "
+#                     + str(optotime - self.inittime)
+#                     + "; "
+#                     + "; ".join([str(o) for o in self.optodata.force[0]])
+#                     + "\n"
+#                 )
+#                 a = ["{0: <8}".format(x) for x in self.optodata.force[0]]
+#                 # pprint.pprint(' '.join(a))  # NOTE
 
-                # print(opto_data_str)
-                if writeFlag:
-                    with open(self.fname, "a") as outf:
-                        outf.write(opto_data_str)
-                        outf.flush()
+#                 # print(opto_data_str)
+#                 if writeFlag:
+#                     with open(self.fname, "a") as outf:
+#                         outf.write(opto_data_str)
+#                         outf.flush()
 
-            elif isinstance(data, optoforce.OptoforceSerialNumber):
-                self.logger.info("The sensor's serial number is " + str(data))
+#             elif isinstance(data, optoforce.OptoforceSerialNumber):
+#                 self.logger.info("The sensor's serial number is " + str(data))
 
 
-# ------------------------------------
-# Methods to read from arucotags
+# # ------------------------------------
+# # Methods to read from arucotags
 
 
 class ArucoThread(threading.Thread):
@@ -243,11 +243,11 @@ class ArucoThread(threading.Thread):
         # height=720
         width = 320
         height = 240
-        fps = 60
+        fps = 100
 
         # ------------------------------------
-        self.w = 0.2  # filter_weight
-        # self.w = 1.0 # Don't filter.
+        # self.w = 0.2  # filter_weight
+        self.w = 1.0  # Don't filter.
 
         # ------------------------------------
         # Parse commandline arguments
@@ -262,7 +262,7 @@ class ArucoThread(threading.Thread):
             )  # depends on fourcc available camera
             self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
             self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-            self.stream.set(cv2.CAP_PROP_FPS, 120)
+            self.stream.set(cv2.CAP_PROP_FPS, 100)
             # self.stream.set(cv2.CAP_PROP_GAIN, 100)
             # self.stream.set(cv2.CAP_PROP_EXPOSURE, -8.0)
 
@@ -282,7 +282,7 @@ class ArucoThread(threading.Thread):
         # -----------------------------------
         # Initialized zeros
         counter = 0
-        avgN = 1
+        avgN = 100
 
         # -- NOTE: this code is highly repetitive, refactor at some point
         while counter < avgN:
@@ -386,7 +386,7 @@ class ArucoThread(threading.Thread):
                 tvec = tvec.reshape(numTags, 3)
                 # NOTE: HARDCODED
                 ids_str = str([str(id) for id in ids])
-                self.logger.info("ids: " + ids_str + " tvec: " + str(tvec.flatten()))
+                # self.logger.info("ids: " + ids_str + " tvec: " + str(tvec.flatten()))
                 atime = time.time()
                 for i in range(numTags):
                     rotMat, jacob = cv2.Rodrigues(rvec[i])
@@ -406,8 +406,9 @@ class ArucoThread(threading.Thread):
                 calcDists = tvec - zeroDists
                 calcThetas = out - zeroThetas
                 # Average between the two tags
-                avgCalcDists = np.average(calcDists, axis=0)
-                avgCalcThetas = np.average(calcThetas, axis=0)
+                # avgCalcDists = np.average(calcDists, axis=0)
+                # avgCalcThetas = np.average(calcThetas, axis=0)
+                self.logger.info(f"{calcDists.flatten()}  {calcThetas}")
 
                 # print(tvec[1]* 1000)
 
