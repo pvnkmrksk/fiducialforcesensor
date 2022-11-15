@@ -275,6 +275,7 @@ class ArucoThread(threading.Thread):
             # self.stream.set(cv2.CAP_PROP_EXPOSURE, -8.0)
 
         except ValueError:
+            print("exception")
             self.stream = cv2.VideoCapture(options.device_or_movie)
 
         # self.stream.set(cv2.CAP_PROP_FRAME_WIDTH,width)
