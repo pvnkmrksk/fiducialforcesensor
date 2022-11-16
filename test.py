@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import datetime
+import cv2.aruco as aruco
 
 
 def main():
@@ -14,7 +15,7 @@ def main():
     )  # depends on fourcc available camera
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-    cap.set(cv2.CAP_PROP_FPS, 30)
+    cap.set(cv2.CAP_PROP_FPS, 120)
     # retrieve properties of the capture object
     cap_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     cap_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -29,10 +30,24 @@ def main():
     last_time = datetime.datetime.now()
     frames = 0
 
+    aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
+
+    print(type(aruco_dict))
+    # print the aruco dictionary
+
+    aruco_params = aruco.DetectorParameters_create()
+
     # main loop: retrieves and displays a frame from the camera
-    while True:
+    while False:
         # blocks until the entire frame is read
         success, img = cap.read()
+
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        corners, ids, rejectedImgPoints = aruco.detectMarkers(
+            gray, aruco_dict, parameters=aruco_params
+        )
+
         frames += 1
 
         # compute fps: current_time - last_time

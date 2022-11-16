@@ -30,6 +30,8 @@ Three files, a .jpg screenshot of the intiial view will be saved, as well as two
 import cv2
 import cv2.aruco as aruco
 
+import json
+
 # import serial
 import sys
 import signal
@@ -417,11 +419,25 @@ class ArucoThread(threading.Thread):
                 # Average between the two tags
                 # avgCalcDists = np.average(calcDists, axis=0)
                 # avgCalcThetas = np.average(calcThetas, axis=0)
-                self.logger.info(f"{calcDists.flatten()}  {calcThetas}")
+                # self.logger.info(f"{calcDists.flatten()}  {calcThetas}")
                 # message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]}"  #  {calcThetas[0][0]}  {calcThetas[0][1]}  {calcThetas[0][2]}"
                 message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]} {calcThetas[0][0]} {calcThetas[0][1]} {calcThetas[0][2]}"
 
-                socket.send_string(message)
+                data = {
+                    "timestamp": atime,
+                    "test_data": {
+                        "x": calcDists[0][0],
+                        "y": calcDists[0][1],
+                        "z": calcDists[0][2],
+                        "roll": calcThetas[0][0],
+                        "pitch": calcThetas[0][1],
+                        "yaw": calcThetas[0][2],
+                    },
+                }
+
+                socket.send_string(json.dumps(data))
+                # socket.send_string(message)
+
                 # print(message)
                 # time.sleep(0.05)
                 # print(tvec[1]* 1000)
@@ -431,7 +447,7 @@ class ArucoThread(threading.Thread):
                 # print('zeroThetas', zeroThetas)
                 # print('zeroDists', zeroDists)
                 # print('filtered reading\n', out)
-                self.logger.debug("exponential filtered, euler angles thetas")
+                # self.logger.debug("exponential filtered, euler angles thetas")
                 # print('zerod reading', calcThetas)
                 # print('averaged between two', avgCalcThetas)
                 # print('\n')
