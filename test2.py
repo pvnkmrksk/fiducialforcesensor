@@ -2,6 +2,16 @@
 
 import numpy as np
 import cv2 as cv
+import time
+
+
+import zmq
+import json
+
+context = zmq.Context()
+socket = context.socket(zmq.PUB)
+socket.bind("tcp://*:9872")
+
 
 # settings camera C270
 mtx = np.float32(
@@ -36,9 +46,9 @@ distCoeffs = dist
 
 inputVideo = cv.VideoCapture(0)
 
-inputVideo.set(cv.CAP_PROP_FRAME_WIDTH, 640)
-inputVideo.set(cv.CAP_PROP_FRAME_HEIGHT, 480)
-inputVideo.set(cv.CAP_PROP_FPS, 120)
+inputVideo.set(cv.CAP_PROP_FRAME_WIDTH, 320)
+inputVideo.set(cv.CAP_PROP_FRAME_HEIGHT, 240)
+inputVideo.set(cv.CAP_PROP_FPS, 100)
 
 
 # dictionary = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_4X4_50)
@@ -48,17 +58,13 @@ inputVideo.set(cv.CAP_PROP_FPS, 120)
 dictionary = cv.aruco.getPredefinedDictionary(cv.aruco.DICT_ARUCO_ORIGINAL)
 # dictionary.bytesList = dictionary.bytesList[20]
 
-while True:
-    inputVideo.grab()
-    (rv, image) = inputVideo.retrieve()
-    if not rv:
-        break
+# used to record the time when we processed last frame
+prev_frame_time = time.time()
+start_time = prev_frame_time
+frames = 0
 
-    # resize image to width 176
-    image = cv.resize(image, (176, 144))
-    # image = cv.resize(image, (64, 48))
-    imageCopy = image.copy()
 
+def arucoAnal(overlayPose=False):
     (corners, ids, impts) = cv.aruco.detectMarkers(image, dictionary)
 
     if ids is not None:
@@ -69,28 +75,72 @@ while True:
             corners, 0.12, camMatrix, distCoeffs
         )
 
-        print(tvecs.shape)
+        # print(tvecs.shape)
 
-        for rvec, tvec in zip(rvecs, tvecs):
-            # project axis points
-            axisPoints = np.float32(
-                [
-                    [0, 0, 0],
-                    [0.12, 0, 0],
-                    [0, 0.12, 0],
-                    [0, 0, 0.12],
-                ]
-            ).reshape((-1, 1, 3))
+        if overlayPose:
+            for rvec, tvec in zip(rvecs, tvecs):
+                # project axis points
+                axisPoints = np.float32(
+                    [
+                        [0, 0, 0],
+                        [0.12, 0, 0],
+                        [0, 0.12, 0],
+                        [0, 0, 0.12],
+                    ]
+                ).reshape((-1, 1, 3))
 
-            (imagePoints, jacobian) = cv.projectPoints(
-                axisPoints, rvec, tvec, camMatrix, distCoeffs
-            )
-            imagePoints = imagePoints.astype(int)
-            cv.line(imageCopy, imagePoints[0, 0], imagePoints[1, 0], (0, 0, 255), 3)
-            cv.line(imageCopy, imagePoints[0, 0], imagePoints[2, 0], (0, 255, 0), 3)
-            cv.line(imageCopy, imagePoints[0, 0], imagePoints[3, 0], (255, 0, 0), 3)
+                (imagePoints, jacobian) = cv.projectPoints(
+                    axisPoints, rvec, tvec, camMatrix, distCoeffs
+                )
+                imagePoints = imagePoints.astype(int)
+                cv.line(imageCopy, imagePoints[0, 0], imagePoints[1, 0], (0, 0, 255), 3)
+                cv.line(imageCopy, imagePoints[0, 0], imagePoints[2, 0], (0, 255, 0), 3)
+                cv.line(imageCopy, imagePoints[0, 0], imagePoints[3, 0], (255, 0, 0), 3)
+
+
+while True:
+    # measure fps of the loop
+    frames += 1
+    inputVideo.grab()
+    (rv, image) = inputVideo.retrieve()
+    if not rv:
+        break
+
+    # resize image to width 176
+    # image = cv.resize(image, (176, 144))
+    # image = cv.resize(image, (64, 48))
+    # imageCopy = image.copy()
+    imageCopy = image
+    arucoAnal()
+
+    # Calculating the fps
+    new_frame_time = time.time()
+
+    # compute fps: current_time - last_time
+    delta_time = new_frame_time - start_time
+    cur_fps = np.around(frames / delta_time, 1)
+    # print("FPS:", cur_fps, "elapsed time:", delta_time, "frames:", frames)
+    # draw FPS text and display image
+    # cv.putText(
+    #     imageCopy,
+    #     "FPS: " + str(cur_fps),
+    #     (10, 30),
+    #     cv.FONT_HERSHEY_SIMPLEX,
+    #     1,
+    #     (0, 255, 0),
+    #     2,
+    #     cv.LINE_AA,
+    # )
+
+    data = {
+        "timestamp": new_frame_time,
+        "cur_fps": np.round(1 / (new_frame_time - prev_frame_time), 2),
+        "fps": cur_fps,
+    }
+    socket.send_string(json.dumps(data))
+    prev_frame_time = new_frame_time
 
     cv.imshow("out", imageCopy)
-    key = cv.waitKey(10)
+    key = cv.waitKey(1)
     if key == 27:
         break
