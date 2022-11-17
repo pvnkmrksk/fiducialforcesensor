@@ -3,6 +3,45 @@ import cv2
 import datetime
 import cv2.aruco as aruco
 
+import time
+import zmq
+import json
+
+context = zmq.Context()
+socket = context.socket(zmq.PUB)
+socket.bind("tcp://*:9872")
+
+# settings camera C270
+mtx = np.float32(
+    [
+        [794.71614391, 0.00000000e00, 347.55631962],
+        [0.00000000e00, 794.71614391, 293.50160806],
+        [0.00000000e00, 0.00000000e00, 1.00000000e00],
+    ]
+)
+
+dist = np.float32(
+    [
+        [-2.45415937e-01],
+        [-6.48440697e00],
+        [3.54169640e-02],
+        [9.11031500e-03],
+        [-1.09181519e02],
+        [-1.23188350e-01],
+        [-7.76776901e00],
+        [-1.05816513e02],
+        [0.00000000e00],
+        [0.00000000e00],
+        [0.00000000e00],
+        [0.00000000e00],
+        [0.00000000e00],
+        [0.00000000e00],
+    ]
+)
+
+camMatrix = mtx
+distCoeffs = dist
+
 
 def main():
     # create display window
@@ -15,7 +54,7 @@ def main():
     )  # depends on fourcc available camera
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-    cap.set(cv2.CAP_PROP_FPS, 120)
+    cap.set(cv2.CAP_PROP_FPS, 50)
     # retrieve properties of the capture object
     cap_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
     cap_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
@@ -29,8 +68,13 @@ def main():
     # initialize time and frame count variables
     last_time = datetime.datetime.now()
     frames = 0
+    # used to record the time when we processed last frame
+    prev_frame_time = time.time()
+    start_time = prev_frame_time
+    frames = 0
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
+    aruco_dict.bytesList = aruco_dict.bytesList[20]
 
     print(type(aruco_dict))
     # print the aruco dictionary
@@ -38,7 +82,9 @@ def main():
     aruco_params = aruco.DetectorParameters_create()
 
     # main loop: retrieves and displays a frame from the camera
-    while False:
+    while True:
+        frames += 1
+
         # blocks until the entire frame is read
         success, img = cap.read()
 
@@ -48,30 +94,33 @@ def main():
             gray, aruco_dict, parameters=aruco_params
         )
 
-        frames += 1
+        if ids is not None:
+
+            cv2.aruco.drawDetectedMarkers(img, corners, ids)
+
+            (rvecs, tvecs, objpts) = cv2.aruco.estimatePoseSingleMarkers(
+                corners, 0.12, camMatrix, distCoeffs
+            )
+
+        new_frame_time = time.time()
 
         # compute fps: current_time - last_time
-        delta_time = datetime.datetime.now() - last_time
-        elapsed_time = delta_time.total_seconds()
-        cur_fps = np.around(frames / elapsed_time, 1)
-        print("FPS:", cur_fps, "elapsed time:", elapsed_time, "frames:", frames)
-        # draw FPS text and display image
-        cv2.putText(
-            img,
-            "FPS: " + str(cur_fps),
-            (10, 30),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            1,
-            (0, 255, 0),
-            2,
-            cv2.LINE_AA,
-        )
-        cv2.imshow("webcam", img)
+        delta_time = new_frame_time - start_time
+        cur_fps = np.around(frames / delta_time, 1)
 
+        cv2.imshow("webcam", img)
         # wait 1ms for ESC to be pressed
         key = cv2.waitKey(1)
         if key == 27:
             break
+
+        data = {
+            "timestamp": new_frame_time,
+            "cur_fps": np.round(1 / (new_frame_time - prev_frame_time), 2),
+            "fps": cur_fps,
+        }
+        socket.send_string(json.dumps(data))
+        prev_frame_time = new_frame_time
 
     # release resources
     cv2.destroyAllWindows()
@@ -80,31 +129,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-# But the fps is still 30. I tried to measure the fps of the live video by using a video file, and it works fine. I am not sure whether it is the problem of the camera or the way I measure the fps. I am using a USB camera, and the model is the same as the one in the link: https://www.amazon.com/gp/product/B07F2X8Q2K/ref=ppx_yo_dt_b_asin_title_o02_s00?ie=UTF8&psc=1
-
-# I am using python 3.7.3 and opencv
-
-# cap = cv2.VideoCapture(0)
-# cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-# cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-# cap.set(cv2.CAP_PROP_FPS, 30)
-
-# while True:
-#     ret, frame = cap.read()
-#     cv2.imshow("frame", frame)
-#     if cv2.waitKey(1) & 0xFF == ord("q"):
-#         break
-
-# cap.release()
-# cv2.destroyAllWindows()
-
-
-# cap = cv2.VideoCapture(0)
-# while True:
-#     ret, frame = cap.read()
-#     cv2.imshow("frame", frame)
-#     if cv2.waitKey(1) & 0xFF == ord("q"):
-#         break
-# cap.release()
-# cv2.destroyAllWindows()

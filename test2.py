@@ -111,26 +111,12 @@ while True:
     # image = cv.resize(image, (64, 48))
     # imageCopy = image.copy()
     imageCopy = image
-    arucoAnal()
+    arucoAnal(True)
 
     # Calculating the fps
     new_frame_time = time.time()
-
-    # compute fps: current_time - last_time
     delta_time = new_frame_time - start_time
     cur_fps = np.around(frames / delta_time, 1)
-    # print("FPS:", cur_fps, "elapsed time:", delta_time, "frames:", frames)
-    # draw FPS text and display image
-    # cv.putText(
-    #     imageCopy,
-    #     "FPS: " + str(cur_fps),
-    #     (10, 30),
-    #     cv.FONT_HERSHEY_SIMPLEX,
-    #     1,
-    #     (0, 255, 0),
-    #     2,
-    #     cv.LINE_AA,
-    # )
 
     data = {
         "timestamp": new_frame_time,

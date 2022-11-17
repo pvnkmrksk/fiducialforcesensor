@@ -59,7 +59,7 @@ import time
 
 context = zmq.Context()
 socket = context.socket(zmq.PUB)
-socket.bind("tcp://*:12345")
+socket.bind("tcp://*:9872")
 
 # ------------------------------------
 # Run Flags
@@ -81,45 +81,20 @@ writeFlag = False  # True  # write to CSV file?
 # writeFolder = "./data/"
 writeFolder = ""
 strtime = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-# o_fname = writeFolder + strtime + '_optoforceData.csv'
 # a_fname = writeFolder + strtime + '_arucotagData.csv'
-o_fname = strtime + "_optoforceData.csv"
 a_fname = strtime + "_arucotagData.csv"
 fmode = "a"
-
 inittime = time.time()
 
-# -------------
-
-# ------------------------------------
-# Sensor Constants
-optoforce_port = "/dev/ttyACM0"
 
 # ------------------------------------
 # Camera Constants
 # NOTE: Make sure to change this to match your prototype!
 tag_size = 0.0038  # in meters
 
-width = 640
-height = 480
-fx = 640.0  # must be floats for apriltags._draw_pose to work
-fy = 640.0
-px = 300.0  # assume principal point to be center of image
-py = 250.0
-
-# camera_matrix = np.array([fx, fy, px, py])
-
-# cameraMatrix = np.array([[619.6207333698724, 0.0, 283.87165814439834],
-# [0.0, 613.2842389650563, 231.9993874728696],
-# [0.0, 0.0, 1.0]])
-
-
-# NOTE: I do not have actual camera matrix for the Amazon hawk sensor!
-# Approximate using another webcam...  HBV-1716-2019-01-29_calib.yaml
-# Use https://github.com/smidm/video2calibration/ and print out the checkerboard to calibrate your camera.
-# 1. Print out checkerboard 2. Take video using webcam of waving / rotating checkerboard (don't move too fast)
-# 3. $ mkdir out; ./calibrate.py your_checkerboard_video.mp4 calibration.yaml --debug-dir out
-# Then copy the matrix and distortion coefficients below:
+width = 320
+height = 240
+fps = 100
 
 cameraMatrix = np.array(
     [
@@ -130,7 +105,6 @@ cameraMatrix = np.array(
 )
 
 distCoeffs, rvecs, tvecs = np.array([]), [], []
-
 distCoeffs = np.array([0.02207713, 0.18641578, -0.01917194, -0.01310851, -0.11910311])
 
 # ------------------------------------
@@ -172,66 +146,6 @@ def rotationMatrixToEulerAngles(R):
     return rots
 
 
-# ------------------------------------
-# Methods to read from optoforce
-
-
-# class OptoThread(threading.Thread):
-#     def __init__(self, inittime, fname):
-
-#         threading.Thread.__init__(self)
-
-#         global logger
-#         self.logger = logger
-
-#         self.inittime = inittime
-#         self.fname = fname
-
-#         optoforce_sensor_type = "s-ch/6-axis"
-#         starting_index = 0
-#         scaling_factors = [[1, 1, 1, 1, 1, 1]]  # one per axis
-#         # if len(sys.argv) > 1:
-#         # port = "/dev/" + sys.argv[1]
-#         try:
-#             self.driver = optoforce.OptoforceDriver(
-#                 optoforce_port, optoforce_sensor_type, scaling_factors
-#             )
-#             self.logger.info("Opened optoforce")
-#         except serial.SerialException as e:
-#             self.logger.debug("failed to open optoforce serial port!")
-#             raise
-
-#     def run(self):
-#         time.sleep(2)  # wait for opencv tag to initialize
-#         while True:
-#             optotime = time.time()
-#             self.optodata = self.driver.read()
-
-#             if isinstance(self.optodata, optoforce.OptoforceData):  # UNTESTED
-#                 opto_data_str = (
-#                     "Optoforce time, xyz, yawpitchroll; "
-#                     + str(optotime - self.inittime)
-#                     + "; "
-#                     + "; ".join([str(o) for o in self.optodata.force[0]])
-#                     + "\n"
-#                 )
-#                 a = ["{0: <8}".format(x) for x in self.optodata.force[0]]
-#                 # pprint.pprint(' '.join(a))  # NOTE
-
-#                 # print(opto_data_str)
-#                 if writeFlag:
-#                     with open(self.fname, "a") as outf:
-#                         outf.write(opto_data_str)
-#                         outf.flush()
-
-#             elif isinstance(data, optoforce.OptoforceSerialNumber):
-#                 self.logger.info("The sensor's serial number is " + str(data))
-
-
-# # ------------------------------------
-# # Methods to read from arucotags
-
-
 class ArucoThread(threading.Thread):
     def __init__(self, inittime, fname, camera_matrix, dist_coeffs, tag_size):
         threading.Thread.__init__(self)
@@ -249,19 +163,9 @@ class ArucoThread(threading.Thread):
         self.aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
         self.aruco_params = aruco.DetectorParameters_create()
 
-        # width=1280
-        # height=720
-        width = 320
-        height = 240
-        fps = 50
-
         # ------------------------------------
         # self.w = 0.2  # filter_weight
         self.w = 1.0  # Don't filter.
-
-        # ------------------------------------
-        # Parse commandline arguments
-
         # ------------------------------------
         # Open video stream
         try:
@@ -270,9 +174,9 @@ class ArucoThread(threading.Thread):
             self.stream.set(
                 cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G")
             )  # depends on fourcc available camera
-            self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-            self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-            self.stream.set(cv2.CAP_PROP_FPS, 187)
+            self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+            self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
+            self.stream.set(cv2.CAP_PROP_FPS, fps)
             # self.stream.set(cv2.CAP_PROP_GAIN, 100)
             # self.stream.set(cv2.CAP_PROP_EXPOSURE, -8.0)
 
@@ -280,16 +184,11 @@ class ArucoThread(threading.Thread):
             print("exception")
             self.stream = cv2.VideoCapture(options.device_or_movie)
 
-        # self.stream.set(cv2.CAP_PROP_FRAME_WIDTH,width)
-        # self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT,height)
-        # self.stream.set(cv2.CAP_PROP_FPS,fps)
-
     def run(self):
         # -----------------------------------
         # Set up filtering for angles
         # We use a straightforward average
         cumTvec, cumRvec = np.ones((numTags, 3)), np.ones((numTags, 3))
-
         # -----------------------------------
         # Initialized zeros
         counter = 0
@@ -297,8 +196,6 @@ class ArucoThread(threading.Thread):
 
         # used to record the time when we processed last frame
         prev_frame_time = 0
-
-        # used to record the time at which we processed current frame
         new_frame_time = 0
 
         # -- NOTE: this code is highly repetitive, refactor at some point
@@ -366,7 +263,14 @@ class ArucoThread(threading.Thread):
         # out, prevOut = np.ones((numTags, 3)), np.ones((numTags, 3))
         out, prevOut = copy.deepcopy(zeroThetas), copy.deepcopy(zeroDists)
 
+        # used to record the time when we processed last frame
+        prev_frame_time = time.time()
+        start_time = prev_frame_time
+        frames = 0
+
         while True:
+            frames += 1
+
             atime = time.time()
             success, frame = self.stream.read()
 
@@ -398,34 +302,6 @@ class ArucoThread(threading.Thread):
                 )
                 gray = aruco.drawDetectedMarkers(gray, corners)
 
-                # new_frame_time = time.time()
-
-                # Calculating the fps
-
-                # fps will be number of frame processed in given time frame
-                # since their will be most of time error of 0.001 second
-                # we will be subtracting it to get more accurate result
-                fps = 1 / (atime - prev_frame_time)
-                prev_frame_time = atime
-
-                # converting the fps into integer
-                fps = np.round(fps, 2)
-
-                print(fps)  # printing the fps value on console
-                # displaying the fps on window and the font size 2
-                cv2.putText(
-                    gray,
-                    str(fps),
-                    (7, 70),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    1,
-                    (100, 255, 0),
-                    3,
-                    cv2.LINE_AA,
-                )
-
-                cv2.imshow("Aruco Camera", gray)
-
             if rvec is not None and rvec.shape[0] == numTags:
                 tvec = tvec.reshape(numTags, 3)
                 # NOTE: HARDCODED
@@ -439,8 +315,6 @@ class ArucoThread(threading.Thread):
                     # NOTE: EXPONENTIAL FILTERING
                     out[i] = self.w * rots + (1 - self.w) * prevOut[i]
                     prevOut[i] = out[i]
-                    # print('Aruco Tag ID:', i, ': ', out[i])
-                    # print('Aruco Tag ID:', 1, ': ', out[1])
 
                 # collect zeros at the beginning
                 # x,y,z should be zero'd and then changes averaged between the
@@ -468,24 +342,27 @@ class ArucoThread(threading.Thread):
                     },
                 }
 
+                # socket.send_string(json.dumps(data))
+
+                new_frame_time = time.time()
+
+                # compute fps: current_time - last_time
+                delta_time = new_frame_time - start_time
+                cur_fps = np.around(frames / delta_time, 1)
+
+                cv2.imshow("webcam", gray)
+                # wait 1ms for ESC to be pressed
+                key = cv2.waitKey(1)
+                if key == 27:
+                    break
+
+                data = {
+                    "timestamp": new_frame_time,
+                    "cur_fps": np.round(1 / (new_frame_time - prev_frame_time), 2),
+                    "fps": cur_fps,
+                }
                 socket.send_string(json.dumps(data))
-                # socket.send_string(message)
-
-                # print(message)
-                # time.sleep(0.05)
-                # print(tvec[1]* 1000)
-
-                # print('shapes', [x.shape for x in [zeroThetas, out, calcThetas,
-                # avgCalcThetas]])
-                # print('zeroThetas', zeroThetas)
-                # print('zeroDists', zeroDists)
-                # print('filtered reading\n', out)
-                # self.logger.debug("exponential filtered, euler angles thetas")
-                # print('zerod reading', calcThetas)
-                # print('averaged between two', avgCalcThetas)
-                # print('\n')
-                # print(outD)
-                # print(zeroDists)
+                prev_frame_time = new_frame_time
 
                 if writeFlag:
                     data_str = (
@@ -527,9 +404,6 @@ class ArucoThread(threading.Thread):
                         outf.write(data_str)
                         outf.flush()
 
-                # a = ['{0: <8}'.format(x) for x in self.optodata.force[0]]
-                # pprint.pprint(' '.join(a))
-
 
 # ------------------------------------
 def main(options):
@@ -539,16 +413,10 @@ def main(options):
 
     global o_fname, a_fname
     if options.name is not None:
-        o_fname = writeFolder + options.name + o_fname
         a_fname = writeFolder + options.name + a_fname
     else:
-        o_fname = writeFolder + o_fname
         a_fname = writeFolder + a_fname
 
-    if optoFlag:
-        optot = OptoThread(inittime, o_fname)
-        optot.daemon = True
-        optot.start()
     if arucoFlag:
         # arucot = ArucoThread(inittime, camera_matrix, a_fname)
         arucot = ArucoThread(inittime, a_fname, cameraMatrix, distCoeffs, tag_size)
@@ -558,8 +426,6 @@ def main(options):
     # cv2.startWindowThread()
 
     while threading.active_count() > 0:
-        # cv2.imshow("Camera", _overlay)
-        # cv2.waitKey(0) #IMPORTANT, without this line, window hangs
 
         k = cv2.waitKey(0)
         if k == 27 or k == ord("q"):  # Escape key
