@@ -161,6 +161,9 @@ class ArucoThread(threading.Thread):
         self.distCoeffs = dist_coeffs
 
         self.aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
+
+        self.aruco_dict.bytesList = self.aruco_dict.bytesList[20]
+
         self.aruco_params = aruco.DetectorParameters_create()
 
         # ------------------------------------
@@ -177,8 +180,10 @@ class ArucoThread(threading.Thread):
             self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, width)
             self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
             self.stream.set(cv2.CAP_PROP_FPS, fps)
-            # self.stream.set(cv2.CAP_PROP_GAIN, 100)
-            # self.stream.set(cv2.CAP_PROP_EXPOSURE, -8.0)
+            self.stream.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+            self.stream.set(cv2.CAP_PROP_EXPOSURE, 20)
+            self.stream.set(cv2.CAP_PROP_GAIN, 40)
+            self.stream.set(cv2.CAP_PROP_GAMMA, 160)
 
         except ValueError:
             print("exception")
@@ -270,12 +275,11 @@ class ArucoThread(threading.Thread):
 
         while True:
             frames += 1
-
-            atime = time.time()
             success, frame = self.stream.read()
 
             if not success:
                 self.logger.debug("failed to grab aruco frame")
+                print("failed to grab aruco frame")
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
@@ -321,18 +325,27 @@ class ArucoThread(threading.Thread):
                 # two tags (maybe?)
 
                 # NOTE: we are exponential filtering thetas but not distances
-                calcDists = 100 * (tvec - zeroDists)
+                calcDists = tvec - zeroDists
                 calcThetas = out - zeroThetas
-                # Average between the two tags
-                # avgCalcDists = np.average(calcDists, axis=0)
-                # avgCalcThetas = np.average(calcThetas, axis=0)
-                # self.logger.info(f"{calcDists.flatten()}  {calcThetas}")
-                # message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]}"  #  {calcThetas[0][0]}  {calcThetas[0][1]}  {calcThetas[0][2]}"
-                message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]} {calcThetas[0][0]} {calcThetas[0][1]} {calcThetas[0][2]}"
+                # message = f"{calcDists[0][0]} {calcDists[0][1]} {calcDists[0][2]} {calcThetas[0][0]} {calcThetas[0][1]} {calcThetas[0][2]}"
+
+                # socket.send_string(json.dumps(data))
+
+                new_frame_time = time.time()
+
+                # compute fps: current_time - last_time
+                total_time = new_frame_time - start_time
+                avg_fps = np.around(frames / total_time, 1)
+
+                # data = {
+                #     "timestamp": new_frame_time,
+                #     "cur_fps": np.round(1 / (new_frame_time - prev_frame_time), 2),
+                #     "fps": cur_fps,
+                # }
 
                 data = {
-                    "timestamp": atime,
-                    "test_data": {
+                    "timestamp": new_frame_time,
+                    "pose": {
                         "x": calcDists[0][0],
                         "y": calcDists[0][1],
                         "z": calcDists[0][2],
@@ -340,29 +353,19 @@ class ArucoThread(threading.Thread):
                         "pitch": calcThetas[0][1],
                         "yaw": calcThetas[0][2],
                     },
+                    "fps": {
+                        "avg": avg_fps,
+                        "cur": np.round(1 / (new_frame_time - prev_frame_time), 2),
+                    },
                 }
-
-                # socket.send_string(json.dumps(data))
-
-                new_frame_time = time.time()
-
-                # compute fps: current_time - last_time
-                delta_time = new_frame_time - start_time
-                cur_fps = np.around(frames / delta_time, 1)
+                socket.send_string(json.dumps(data))
+                prev_frame_time = new_frame_time
 
                 cv2.imshow("webcam", gray)
                 # wait 1ms for ESC to be pressed
                 key = cv2.waitKey(1)
                 if key == 27:
                     break
-
-                data = {
-                    "timestamp": new_frame_time,
-                    "cur_fps": np.round(1 / (new_frame_time - prev_frame_time), 2),
-                    "fps": cur_fps,
-                }
-                socket.send_string(json.dumps(data))
-                prev_frame_time = new_frame_time
 
                 if writeFlag:
                     data_str = (

@@ -46,6 +46,10 @@ distCoeffs = dist
 
 inputVideo = cv.VideoCapture(0)
 
+inputVideo.set(
+    cv.CAP_PROP_FOURCC, cv.VideoWriter_fourcc("M", "J", "P", "G")
+)  # depends on fourcc available camera
+
 inputVideo.set(cv.CAP_PROP_FRAME_WIDTH, 320)
 inputVideo.set(cv.CAP_PROP_FRAME_HEIGHT, 240)
 inputVideo.set(cv.CAP_PROP_FPS, 100)
