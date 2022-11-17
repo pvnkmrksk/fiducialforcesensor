@@ -253,7 +253,7 @@ class ArucoThread(threading.Thread):
         # height=720
         width = 320
         height = 240
-        fps = 100
+        fps = 50
 
         # ------------------------------------
         # self.w = 0.2  # filter_weight
@@ -272,7 +272,7 @@ class ArucoThread(threading.Thread):
             )  # depends on fourcc available camera
             self.stream.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
             self.stream.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-            self.stream.set(cv2.CAP_PROP_FPS, 100)
+            self.stream.set(cv2.CAP_PROP_FPS, 187)
             # self.stream.set(cv2.CAP_PROP_GAIN, 100)
             # self.stream.set(cv2.CAP_PROP_EXPOSURE, -8.0)
 
@@ -293,7 +293,13 @@ class ArucoThread(threading.Thread):
         # -----------------------------------
         # Initialized zeros
         counter = 0
-        avgN = 100
+        avgN = 10
+
+        # used to record the time when we processed last frame
+        prev_frame_time = 0
+
+        # used to record the time at which we processed current frame
+        new_frame_time = 0
 
         # -- NOTE: this code is highly repetitive, refactor at some point
         while counter < avgN:
@@ -391,6 +397,33 @@ class ArucoThread(threading.Thread):
                     corners, self.tagSize, self.cameraMatrix, self.distCoeffs
                 )
                 gray = aruco.drawDetectedMarkers(gray, corners)
+
+                # new_frame_time = time.time()
+
+                # Calculating the fps
+
+                # fps will be number of frame processed in given time frame
+                # since their will be most of time error of 0.001 second
+                # we will be subtracting it to get more accurate result
+                fps = 1 / (atime - prev_frame_time)
+                prev_frame_time = atime
+
+                # converting the fps into integer
+                fps = np.round(fps, 2)
+
+                print(fps)  # printing the fps value on console
+                # displaying the fps on window and the font size 2
+                cv2.putText(
+                    gray,
+                    str(fps),
+                    (7, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    1,
+                    (100, 255, 0),
+                    3,
+                    cv2.LINE_AA,
+                )
+
                 cv2.imshow("Aruco Camera", gray)
 
             if rvec is not None and rvec.shape[0] == numTags:
