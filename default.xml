@@ -1,25 +1,38 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root>
  <tabbed_widget name="Main Window" parent="main_window">
-  <Tab tab_name="tab1" containers="1">
+  <Tab containers="1" tab_name="tab1">
    <Container>
-    <DockSplitter sizes="0.5;0.5" orientation="-" count="2">
+    <DockSplitter count="3" sizes="0.333554;0.332893;0.333554" orientation="-">
      <DockArea name="...">
-      <plot flip_x="false" style="Lines" mode="TimeSeries" flip_y="false">
-       <range right="116.951696" top="-0.099670" left="108.952645" bottom="-0.100126"/>
+      <plot flip_x="false" style="Lines" flip_y="false" mode="TimeSeries">
+       <range bottom="-0.100619" left="0.000000" top="-0.099878" right="7.991294"/>
        <limitY/>
-       <curve name="/pose/x" color="#1ac938"/>
-       <curve name="/pose/y" color="#ff7f0e"/>
-       <curve name="/pose/z" color="#f14cc1"/>
+       <curve name="/x" color="#1f77b4"/>
+       <curve name="/y" color="#d62728"/>
+       <curve name="/z" color="#1ac938"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot flip_x="false" style="Lines" mode="TimeSeries" flip_y="false">
-       <range right="116.951696" top="252.197250" left="108.952645" bottom="29.712750"/>
+      <plot flip_x="false" style="Lines" flip_y="false" mode="TimeSeries">
+       <range bottom="-83.154880" left="0.000000" top="-82.893702" right="7.991294"/>
        <limitY/>
-       <curve name="/fps/cur" color="#bcbd22"/>
-       <curve name="/fps/avg" color="#1f77b4"/>
-       <curve name="/cur_fps" color="#d62728"/>
+       <curve name="/yaw" color="#9467bd">
+        <transform name="Outlier Removal" alias="/yaw[Absolute]">
+         <options value="100"/>
+        </transform>
+       </curve>
+       <curve name="/cur" color="#17becf"/>
+       <curve name="/avg" color="#bcbd22"/>
+      </plot>
+     </DockArea>
+     <DockArea name="...">
+      <plot flip_x="false" style="Lines" flip_y="false" mode="TimeSeries">
+       <range bottom="-5.654643" left="0.000000" top="3.761955" right="7.991294"/>
+       <limitY/>
+       <curve name="/roll" color="#ff7f0e"/>
+       <curve name="/pitch" color="#f14cc1"/>
+       <curve name="/yaw" color="#9467bd"/>
       </plot>
      </DockArea>
     </DockSplitter>
@@ -32,7 +45,7 @@
  <!-- - - - - - - - - - - - - - - -->
  <Plugins>
   <plugin ID="DataLoad CSV">
-   <default delimiter="0" time_axis=""/>
+   <default time_axis="" delimiter="0"/>
   </plugin>
   <plugin ID="DataLoad ROS bags">
    <use_header_stamp value="false"/>

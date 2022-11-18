@@ -345,18 +345,14 @@ class ArucoThread(threading.Thread):
 
                 data = {
                     "timestamp": new_frame_time,
-                    "pose": {
-                        "x": calcDists[0][0],
-                        "y": calcDists[0][1],
-                        "z": calcDists[0][2],
-                        "roll": calcThetas[0][0],
-                        "pitch": calcThetas[0][1],
-                        "yaw": calcThetas[0][2],
-                    },
-                    "fps": {
-                        "avg": avg_fps,
-                        "cur": np.round(1 / (new_frame_time - prev_frame_time), 2),
-                    },
+                    "x": calcDists[0][0],
+                    "y": calcDists[0][1],
+                    "z": calcDists[0][2],
+                    "roll": calcThetas[0][0],
+                    "pitch": calcThetas[0][1],
+                    "yaw": calcThetas[0][2],
+                    "avg": avg_fps,
+                    "cur": np.round(1 / (new_frame_time - prev_frame_time), 2),
                 }
                 socket.send_string(json.dumps(data))
                 prev_frame_time = new_frame_time
