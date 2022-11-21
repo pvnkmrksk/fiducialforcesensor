@@ -197,7 +197,7 @@ class ArucoThread(threading.Thread):
         # -----------------------------------
         # Initialized zeros
         counter = 0
-        avgN = 10
+        avgN = 100
 
         # used to record the time when we processed last frame
         prev_frame_time = 0
@@ -221,19 +221,11 @@ class ArucoThread(threading.Thread):
                 )  # put corners in order of id
                 ids = [tag[0] for tag in tagData]
                 corners = [tag[1] for tag in tagData]
-            # print(ids)
-
-            print(
-                cv2.aruco.estimatePoseSingleMarkers(
-                    corners, self.tagSize, self.cameraMatrix, self.distCoeffs
-                )
-            )
-            # rvec, tvec = \
 
             rvec, tvec, objPoints = cv2.aruco.estimatePoseSingleMarkers(
                 corners, self.tagSize, self.cameraMatrix, self.distCoeffs
             )
-            # print(rvec)
+            print(tvec)
 
             if rvec is not None and rvec.shape[0] == numTags:
                 counter += 1
