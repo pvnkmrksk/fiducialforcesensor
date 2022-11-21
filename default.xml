@@ -1,12 +1,12 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <root>
- <tabbed_widget name="Main Window" parent="main_window">
-  <Tab containers="1" tab_name="tab1">
+ <tabbed_widget parent="main_window" name="Main Window">
+  <Tab tab_name="tab1" containers="1">
    <Container>
-    <DockSplitter count="3" sizes="0.333554;0.332893;0.333554" orientation="-">
+    <DockSplitter orientation="-" sizes="0.333554;0.332893;0.333554" count="3">
      <DockArea name="...">
-      <plot flip_x="false" style="Lines" flip_y="false" mode="TimeSeries">
-       <range bottom="-0.100619" left="0.000000" top="-0.099878" right="7.991294"/>
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range left="63.086381" bottom="-0.000158" top="0.000650" right="71.076081"/>
        <limitY/>
        <curve name="/x" color="#1f77b4"/>
        <curve name="/y" color="#d62728"/>
@@ -14,24 +14,19 @@
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot flip_x="false" style="Lines" flip_y="false" mode="TimeSeries">
-       <range bottom="-83.154880" left="0.000000" top="-82.893702" right="7.991294"/>
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range left="63.086381" bottom="18.085750" top="93.864250" right="71.076081"/>
        <limitY/>
-       <curve name="/yaw" color="#9467bd">
-        <transform name="Outlier Removal" alias="/yaw[Absolute]">
-         <options value="100"/>
-        </transform>
-       </curve>
-       <curve name="/cur" color="#17becf"/>
-       <curve name="/avg" color="#bcbd22"/>
+       <curve name="/avg" color="#17becf"/>
+       <curve name="/cur" color="#bcbd22"/>
       </plot>
      </DockArea>
      <DockArea name="...">
-      <plot flip_x="false" style="Lines" flip_y="false" mode="TimeSeries">
-       <range bottom="-5.654643" left="0.000000" top="3.761955" right="7.991294"/>
+      <plot flip_y="false" mode="TimeSeries" style="Lines" flip_x="false">
+       <range left="63.086381" bottom="-9.265588" top="4.889017" right="71.076081"/>
        <limitY/>
-       <curve name="/roll" color="#ff7f0e"/>
-       <curve name="/pitch" color="#f14cc1"/>
+       <curve name="/pitch" color="#ff7f0e"/>
+       <curve name="/roll" color="#f14cc1"/>
        <curve name="/yaw" color="#9467bd"/>
       </plot>
      </DockArea>
@@ -45,7 +40,7 @@
  <!-- - - - - - - - - - - - - - - -->
  <Plugins>
   <plugin ID="DataLoad CSV">
-   <default time_axis="" delimiter="0"/>
+   <default delimiter="0" time_axis=""/>
   </plugin>
   <plugin ID="DataLoad ROS bags">
    <use_header_stamp value="false"/>
@@ -78,6 +73,7 @@
  </Plugins>
  <!-- - - - - - - - - - - - - - - -->
  <previouslyLoaded_Datafiles/>
+ <previouslyLoaded_Streamer name="ZMQ Subscriber"/>
  <!-- - - - - - - - - - - - - - - -->
  <customMathEquations/>
  <snippets/>

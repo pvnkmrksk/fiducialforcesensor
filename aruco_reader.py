@@ -134,6 +134,65 @@ def get_pose(img, gray, aruco_dict, aruco_params):
     return rots, tvecs
 
 
+def read_get_pose(cap, aruco_dict, aruco_params, rots_bl, tvecs_bl):
+    img, gray = read_image(cap)
+    rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params)
+
+    if rots[0] is not None and tvecs[0] is not None:
+        rots = rots - rots_bl
+        tvecs = tvecs - tvecs_bl
+
+    else:
+        rots = [None, None, None]
+        tvecs = [None, None, None]
+
+    return rots, tvecs, img
+
+
+def get_baseline(cap, aruco_dict, aruco_params, frames=10):
+
+    rots = []
+    tvecs = []
+
+    rots_bl = np.array([0, 0, 0])
+    tvecs_bl = np.array([0, 0, 0])
+
+    for i in range(frames):
+        rots_i, tvecs_i, img = read_get_pose(
+            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl
+        )
+
+        if rots_i[0] is not None and tvecs_i[0] is not None:
+            rots.append(rots_i)
+            tvecs.append(tvecs_i)
+
+        cv2.imshow("webcam", img)
+        # wait 1ms for ESC to be pressed
+        key = cv2.waitKey(1)
+
+    rots_bl = np.array(rots).mean(axis=0)
+    tvecs_bl = np.array(tvecs).mean(axis=0)
+
+    send_pose(socket, rots_bl, tvecs_bl, 0, 0)
+
+    return rots_bl, tvecs_bl
+
+
+def send_pose(socket, rots, tvecs, avg_fps, cur_fps):
+
+    data = {
+        "x": tvecs[0],
+        "y": tvecs[1],
+        "z": tvecs[2],
+        "roll": rots[0],
+        "pitch": rots[1],
+        "yaw": rots[2],
+        "avg": avg_fps,
+        "cur": cur_fps,
+    }
+    socket.send_string(json.dumps(data))
+
+
 def main():
 
     # initialize camera
@@ -150,38 +209,23 @@ def main():
     prev_frame_time = time.time()
     start_time = prev_frame_time
 
+    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, frames=100)
+
     # main loop: retrieves and displays a frame from the camera
     while True:
         frames += 1
         new_frame_time = time.time()
 
-        img, gray = read_image(cap)
-        rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params)
+        rots, tvecs, img = read_get_pose(
+            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl
+        )
 
-        try:
-            data = {
-                "timestamp": new_frame_time,
-                "x": tvecs[0],
-                "y": tvecs[1],
-                "z": tvecs[2],
-                "roll": rots[0],
-                "pitch": rots[1],
-                "yaw": rots[2],
-                "avg": avg_fps,
-                "cur": cur_fps,
-            }
-            socket.send_string(json.dumps(data))
-
-        except Exception as e:
-            print(e)
-            print("tvecs: ", tvecs)
-            print("rots: ", rots)
+        send_pose(socket, rots, tvecs, avg_fps, cur_fps)
 
         # compute fps: current_time - last_time
         delta_time = new_frame_time - start_time
         avg_fps = np.around(frames / delta_time, 1)
         cur_fps = np.round(1 / (new_frame_time - prev_frame_time), 2)
-
         prev_frame_time = new_frame_time
 
         cv2.imshow("webcam", img)
