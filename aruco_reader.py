@@ -1,8 +1,7 @@
 import numpy as np
-import cv2
-import datetime
 import cv2.aruco as aruco
-
+import cv2 as cv2
+import datetime
 import time
 import zmq
 import json
@@ -43,6 +42,40 @@ camMatrix = mtx
 distCoeffs = dist
 
 
+def isRotationMatrix(R):
+    Rt = np.transpose(R)
+    shouldBeIdentity = np.dot(Rt, R)
+    I = np.identity(3, dtype=R.dtype)
+    n = np.linalg.norm(I - shouldBeIdentity)
+    return n < 1e-6
+
+
+# Calculates rotation matrix to euler angles
+# The result is the same as MATLAB except the order
+# of the euler angles ( x and z are swapped ).
+def rotationMatrixToEulerAngles(R):
+
+    assert isRotationMatrix(R)
+
+    sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
+
+    singular = sy < 1e-6
+
+    if not singular:
+        x = np.arctan2(R[2, 1], R[2, 2])
+        y = np.arctan2(-R[2, 0], sy)
+        z = np.arctan2(R[1, 0], R[0, 0])
+    else:
+        x = np.arctan2(-R[1, 2], R[1, 1])
+        y = np.arctan2(-R[2, 0], sy)
+        z = 0
+
+    rots = np.array([x, y, z])
+    rots = np.array([np.degrees(r) for r in rots])
+    rots[0] = 180 - rots[0] % 360
+    return rots
+
+
 def main():
     # create display window
     cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
@@ -52,22 +85,22 @@ def main():
     cap.set(
         cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G")
     )  # depends on fourcc available camera
+
+    # set resolution
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
-    cap.set(cv2.CAP_PROP_FPS, 50)
-    # retrieve properties of the capture object
-    cap_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-    cap_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-    cap_fps = cap.get(cv2.CAP_PROP_FPS)
 
-    fps_sleep = int(1000 / cap_fps)
-    print("* Capture width:", cap_width)
-    print("* Capture height:", cap_height)
-    print("* Capture FPS:", cap_fps, "ideal wait time between frames:", fps_sleep, "ms")
+    # set framerate
+    cap.set(cv2.CAP_PROP_FPS, 100)
 
-    # initialize time and frame count variables
-    last_time = datetime.datetime.now()
-    frames = 0
+    # set exposure
+    cap.set(cv2.CAP_PROP_EXPOSURE, 20)
+    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+
+    # set gain
+    cap.set(cv2.CAP_PROP_GAIN, 40)
+    cap.set(cv2.CAP_PROP_GAMMA, 160)
+
     # used to record the time when we processed last frame
     prev_frame_time = time.time()
     start_time = prev_frame_time
@@ -75,15 +108,16 @@ def main():
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[20]
-
-    print(type(aruco_dict))
-    # print the aruco dictionary
-
     aruco_params = aruco.DetectorParameters_create()
+
+    rvecs = None
+    tvecs = None
+    avg_fps = 0
 
     # main loop: retrieves and displays a frame from the camera
     while True:
         frames += 1
+        new_frame_time = time.time()
 
         # blocks until the entire frame is read
         success, img = cap.read()
@@ -99,14 +133,41 @@ def main():
             cv2.aruco.drawDetectedMarkers(img, corners, ids)
 
             (rvecs, tvecs, objpts) = cv2.aruco.estimatePoseSingleMarkers(
-                corners, 0.12, camMatrix, distCoeffs
+                corners, 0.004, camMatrix, distCoeffs
             )
 
-        new_frame_time = time.time()
+            rotMat, jacob = cv2.Rodrigues(rvecs)
+            rots = rotationMatrixToEulerAngles(rotMat)
+
+            tvecs = tvecs[0][0]
+
+            # print("rvecs: ", rvecs)
+            # print("rots: ", rots)
+            # print("tvecs: ", tvecs)
+
+            try:
+                data = {
+                    "timestamp": new_frame_time,
+                    "x": tvecs[0],
+                    "y": tvecs[1],
+                    "z": tvecs[2],
+                    "roll": rots[0],
+                    "pitch": rots[1],
+                    "yaw": rots[2],
+                    "avg": avg_fps,
+                    "cur": np.round(1 / (new_frame_time - prev_frame_time), 2),
+                }
+                socket.send_string(json.dumps(data))
+
+            except Exception as e:
+                print(e)
+                print("tvecs: ", tvecs)
+                print("rots: ", rots)
 
         # compute fps: current_time - last_time
         delta_time = new_frame_time - start_time
-        cur_fps = np.around(frames / delta_time, 1)
+        avg_fps = np.around(frames / delta_time, 1)
+        prev_frame_time = new_frame_time
 
         cv2.imshow("webcam", img)
         # wait 1ms for ESC to be pressed
@@ -114,20 +175,10 @@ def main():
         if key == 27:
             break
 
-        data = {
-            "timestamp": new_frame_time,
-            "cur_fps": np.round(1 / (new_frame_time - prev_frame_time), 2),
-            "fps": cur_fps,
-        }
-        socket.send_string(json.dumps(data))
-        prev_frame_time = new_frame_time
-
     # release resources
     cv2.destroyAllWindows()
-
     cap.release()
 
 
 if __name__ == "__main__":
-
     main()
