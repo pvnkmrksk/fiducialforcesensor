@@ -50,9 +50,6 @@ def isRotationMatrix(R):
     return n < 1e-6
 
 
-# Calculates rotation matrix to euler angles
-# The result is the same as MATLAB except the order
-# of the euler angles ( x and z are swapped ).
 def rotationMatrixToEulerAngles(R):
 
     assert isRotationMatrix(R)
@@ -76,97 +73,115 @@ def rotationMatrixToEulerAngles(R):
     return rots
 
 
-def main():
+def initCamera(
+    camera=0, width=320, height=240, fps=100, exposure=20, gain=40, gamma=160
+):
     # create display window
     cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
 
     # initialize webcam capture object
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(camera)
     cap.set(
         cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G")
     )  # depends on fourcc available camera
 
     # set resolution
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 240)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
 
-    # set framerate
-    cap.set(cv2.CAP_PROP_FPS, 100)
+    # set fps
+    cap.set(cv2.CAP_PROP_FPS, fps)
 
     # set exposure
-    cap.set(cv2.CAP_PROP_EXPOSURE, 20)
+    cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
     cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
 
-    # set gain
-    cap.set(cv2.CAP_PROP_GAIN, 40)
-    cap.set(cv2.CAP_PROP_GAMMA, 160)
+    # set gain and gamma
+    cap.set(cv2.CAP_PROP_GAIN, gain)
+    cap.set(cv2.CAP_PROP_GAMMA, gamma)
 
-    # used to record the time when we processed last frame
-    prev_frame_time = time.time()
-    start_time = prev_frame_time
-    frames = 0
+    return cap
+
+
+def read_image(cap):
+    # blocks until the entire frame is read
+    success, img = cap.read()
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    return img, gray
+
+
+def get_pose(img, gray, aruco_dict, aruco_params):
+
+    corners, ids, rejectedImgPoints = aruco.detectMarkers(
+        gray, aruco_dict, parameters=aruco_params
+    )
+
+    if ids is not None:
+
+        aruco.drawDetectedMarkers(img, corners, ids)
+
+        (rvecs, tvecs, objpts) = aruco.estimatePoseSingleMarkers(
+            corners, 0.004, camMatrix, distCoeffs
+        )
+        rotMat, jacob = cv2.Rodrigues(rvecs)
+        rots = rotationMatrixToEulerAngles(rotMat)
+        tvecs = tvecs[0][0]
+
+    else:
+        tvecs = [None, None, None]
+        rots = [None, None, None]
+
+    return rots, tvecs
+
+
+def main():
+
+    # initialize camera
+    cap = initCamera(
+        camera=0, width=640, height=480, fps=30, exposure=20, gain=40, gamma=160
+    )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[20]
     aruco_params = aruco.DetectorParameters_create()
 
-    rvecs = None
-    tvecs = None
-    avg_fps = 0
+    # used to record the time when we processed last frame
+    avg_fps, cur_fps, frames = 0, 0, 0
+    prev_frame_time = time.time()
+    start_time = prev_frame_time
 
     # main loop: retrieves and displays a frame from the camera
     while True:
         frames += 1
         new_frame_time = time.time()
 
-        # blocks until the entire frame is read
-        success, img = cap.read()
+        img, gray = read_image(cap)
+        rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params)
 
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        try:
+            data = {
+                "timestamp": new_frame_time,
+                "x": tvecs[0],
+                "y": tvecs[1],
+                "z": tvecs[2],
+                "roll": rots[0],
+                "pitch": rots[1],
+                "yaw": rots[2],
+                "avg": avg_fps,
+                "cur": cur_fps,
+            }
+            socket.send_string(json.dumps(data))
 
-        corners, ids, rejectedImgPoints = aruco.detectMarkers(
-            gray, aruco_dict, parameters=aruco_params
-        )
-
-        if ids is not None:
-
-            cv2.aruco.drawDetectedMarkers(img, corners, ids)
-
-            (rvecs, tvecs, objpts) = cv2.aruco.estimatePoseSingleMarkers(
-                corners, 0.004, camMatrix, distCoeffs
-            )
-
-            rotMat, jacob = cv2.Rodrigues(rvecs)
-            rots = rotationMatrixToEulerAngles(rotMat)
-
-            tvecs = tvecs[0][0]
-
-            # print("rvecs: ", rvecs)
-            # print("rots: ", rots)
-            # print("tvecs: ", tvecs)
-
-            try:
-                data = {
-                    "timestamp": new_frame_time,
-                    "x": tvecs[0],
-                    "y": tvecs[1],
-                    "z": tvecs[2],
-                    "roll": rots[0],
-                    "pitch": rots[1],
-                    "yaw": rots[2],
-                    "avg": avg_fps,
-                    "cur": np.round(1 / (new_frame_time - prev_frame_time), 2),
-                }
-                socket.send_string(json.dumps(data))
-
-            except Exception as e:
-                print(e)
-                print("tvecs: ", tvecs)
-                print("rots: ", rots)
+        except Exception as e:
+            print(e)
+            print("tvecs: ", tvecs)
+            print("rots: ", rots)
 
         # compute fps: current_time - last_time
         delta_time = new_frame_time - start_time
         avg_fps = np.around(frames / delta_time, 1)
+        cur_fps = np.round(1 / (new_frame_time - prev_frame_time), 2)
+
         prev_frame_time = new_frame_time
 
         cv2.imshow("webcam", img)
