@@ -169,6 +169,7 @@ def get_baseline(cap, aruco_dict, aruco_params, frames=10):
         cv2.imshow("webcam", img)
         # wait 1ms for ESC to be pressed
         key = cv2.waitKey(1)
+        send_pose(socket, rots_i, tvecs_i, 0, 0)
 
     rots_bl = np.array(rots).mean(axis=0)
     tvecs_bl = np.array(tvecs).mean(axis=0)
@@ -197,19 +198,19 @@ def main():
 
     # initialize camera
     cap = initCamera(
-        camera=0, width=640, height=480, fps=30, exposure=20, gain=40, gamma=160
+        camera=0, width=320, height=240, fps=100, exposure=27, gain=40, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[20]
     aruco_params = aruco.DetectorParameters_create()
 
+    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, frames=100)
+
     # used to record the time when we processed last frame
     avg_fps, cur_fps, frames = 0, 0, 0
     prev_frame_time = time.time()
     start_time = prev_frame_time
-
-    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, frames=100)
 
     # main loop: retrieves and displays a frame from the camera
     while True:
