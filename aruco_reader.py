@@ -74,7 +74,7 @@ def rotationMatrixToEulerAngles(R):
 
 
 def initCamera(
-    camera=0, width=320, height=240, fps=100, exposure=20, gain=40, gamma=160
+    camera=0, width=320, height=240, fps=100, exposure=150, gain=40, gamma=160
 ):
     # create display window
     cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
@@ -198,11 +198,11 @@ def main():
 
     # initialize camera
     cap = initCamera(
-        camera=0, width=320, height=240, fps=100, exposure=27, gain=40, gamma=72
+        camera=0, width=320, height=240, fps=100, exposure=60, gain=40, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
-    aruco_dict.bytesList = aruco_dict.bytesList[20]
+    aruco_dict.bytesList = aruco_dict.bytesList[64]
     aruco_params = aruco.DetectorParameters_create()
 
     rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, frames=100)
