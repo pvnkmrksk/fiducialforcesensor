@@ -179,8 +179,10 @@ def get_baseline(cap, aruco_dict, aruco_params, frames=10):
     return rots_bl, tvecs_bl
 
 
-def send_pose(socket, rots, tvecs, avg_fps, cur_fps):
+def send_pose(socket, rots, tvecs, avg_fps, cur_fps,  raw=None):
 
+    if raw is None:
+        raw = [0,0,0]
     data = {
         "x": tvecs[0],
         "y": tvecs[1],
@@ -188,17 +190,36 @@ def send_pose(socket, rots, tvecs, avg_fps, cur_fps):
         "roll": rots[0],
         "pitch": rots[1],
         "yaw": rots[2],
+        "raw0": raw[0],
+        "raw1": raw[1],
+        "raw2": raw[2],
         "avg": avg_fps,
         "cur": cur_fps,
     }
     socket.send_string(json.dumps(data))
+
+#impport deque
+from collections import deque
+
+length  = 5
+# initialize the deque
+q1 = deque(maxlen=length)
+q2 = deque(maxlen=length)
+q3 = deque(maxlen=length)
+#function to append data and median of last 3 values
+def med_filter(q, data):
+    if data is not None:
+        q.append(data)  
+    return np.median(q)
+
+
 
 
 def main():
 
     # initialize camera
     cap = initCamera(
-        camera=0, width=320, height=240, fps=100, exposure=60, gain=40, gamma=72
+        camera=0, width=320, height=240, fps=100, exposure=10, gain=1, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
@@ -221,7 +242,16 @@ def main():
             cap, aruco_dict, aruco_params, rots_bl, tvecs_bl
         )
 
-        send_pose(socket, rots, tvecs, avg_fps, cur_fps)
+        raw = rots.copy()
+        # smooth out the rots and tvecs data
+        rots[0] = med_filter(q1, rots[0])
+        rots[1] = med_filter(q2, rots[1])
+        rots[2] = med_filter(q3, rots[2])
+
+
+
+
+        send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=raw)
 
         # compute fps: current_time - last_time
         delta_time = new_frame_time - start_time
