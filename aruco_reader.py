@@ -10,36 +10,46 @@ context = zmq.Context()
 socket = context.socket(zmq.PUB)
 socket.bind("tcp://*:9872")
 
-# settings camera C270
-mtx = np.float32(
+# # settings camera C270
+# mtx = np.float32(
+#     [
+#         [794.71614391, 0.00000000e00, 347.55631962],
+#         [0.00000000e00, 794.71614391, 293.50160806],
+#         [0.00000000e00, 0.00000000e00, 1.00000000e00],
+#     ]
+# )
+
+# dist = np.float32(
+#     [
+#         [-2.45415937e-01],
+#         [-6.48440697e00],
+#         [3.54169640e-02],
+#         [9.11031500e-03],
+#         [-1.09181519e02],
+#         [-1.23188350e-01],
+#         [-7.76776901e00],
+#         [-1.05816513e02],
+#         [0.00000000e00],
+#         [0.00000000e00],
+#         [0.00000000e00],
+#         [0.00000000e00],
+#         [0.00000000e00],
+#         [0.00000000e00],
+#     ]
+# )
+
+# camMatrix = mtx
+# distCoeffs = dist
+
+
+camMatrix = np.array(
     [
-        [794.71614391, 0.00000000e00, 347.55631962],
-        [0.00000000e00, 794.71614391, 293.50160806],
+        [3.18178993e03, 0.00000000e00, 3.56480383e02],
+        [0.00000000e00, 3.21028738e03, 2.68906759e02],
         [0.00000000e00, 0.00000000e00, 1.00000000e00],
     ]
 )
-
-dist = np.float32(
-    [
-        [-2.45415937e-01],
-        [-6.48440697e00],
-        [3.54169640e-02],
-        [9.11031500e-03],
-        [-1.09181519e02],
-        [-1.23188350e-01],
-        [-7.76776901e00],
-        [-1.05816513e02],
-        [0.00000000e00],
-        [0.00000000e00],
-        [0.00000000e00],
-        [0.00000000e00],
-        [0.00000000e00],
-        [0.00000000e00],
-    ]
-)
-
-camMatrix = mtx
-distCoeffs = dist
+distCoeffs = np.array([-9.14669792, -0.43721955, 0.0, 0.0, 0.0])
 
 
 def isRotationMatrix(R):
@@ -51,7 +61,6 @@ def isRotationMatrix(R):
 
 
 def rotationMatrixToEulerAngles(R):
-
     assert isRotationMatrix(R)
 
     sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
@@ -111,13 +120,11 @@ def read_image(cap):
 
 
 def get_pose(img, gray, aruco_dict, aruco_params):
-
     corners, ids, rejectedImgPoints = aruco.detectMarkers(
         gray, aruco_dict, parameters=aruco_params
     )
 
     if ids is not None:
-
         aruco.drawDetectedMarkers(img, corners, ids)
 
         (rvecs, tvecs, objpts) = aruco.estimatePoseSingleMarkers(
@@ -150,7 +157,6 @@ def read_get_pose(cap, aruco_dict, aruco_params, rots_bl, tvecs_bl):
 
 
 def get_baseline(cap, aruco_dict, aruco_params, frames=10):
-
     rots = []
     tvecs = []
 
@@ -179,10 +185,9 @@ def get_baseline(cap, aruco_dict, aruco_params, frames=10):
     return rots_bl, tvecs_bl
 
 
-def send_pose(socket, rots, tvecs, avg_fps, cur_fps,  raw=None):
-
+def send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=None):
     if raw is None:
-        raw = [0,0,0]
+        raw = [0, 0, 0]
     data = {
         "x": tvecs[0],
         "y": tvecs[1],
@@ -190,33 +195,58 @@ def send_pose(socket, rots, tvecs, avg_fps, cur_fps,  raw=None):
         "roll": rots[0],
         "pitch": rots[1],
         "yaw": rots[2],
-        "raw0": raw[0],
-        "raw1": raw[1],
-        "raw2": raw[2],
-        "avg": avg_fps,
-        "cur": cur_fps,
+        # "raw0": raw[0],
+        # "raw1": raw[1],
+        # "raw2": raw[2],
+        # "avg": avg_fps,
+        # "cur": cur_fps,
     }
-    socket.send_string(json.dumps(data))
-
-#impport deque
-from collections import deque
-
-length  = 5
-# initialize the deque
-q1 = deque(maxlen=length)
-q2 = deque(maxlen=length)
-q3 = deque(maxlen=length)
-#function to append data and median of last 3 values
-def med_filter(q, data):
-    if data is not None:
-        q.append(data)  
-    return np.median(q)
+    # only send data if all values are not None
+    if not any(np.array(list(data.values())) == None):
+        socket.send_json(data)
 
 
+def med_filter(q, data, length=11, threshold=3):
+    """
+    This function performs a median filter on data. It takes in a queue, data,
+    length, and threshold. The length is the size of the queue and the threshold
+    is the z score threshold for which to replace the data in the queue with the
+    last element in the queue. The function returns the median of the queue.
+
+    Parameters:
+    q: Queue
+    data: Number
+    length: Number
+    threshold: Number
+
+    Returns:
+    Number: the median of the queue
+    """
+
+    # if any of the items in the data is None, replace data with last element in queue
+    if not any(np.array(data) == None):
+        np.roll(q, -1, axis=0)
+
+        std = np.std(q, axis=0)
+        # if any of the std is 0, then replace data with last element in queue
+        if std.any() == 0:
+            q[-1] = data
+            print(f"std is 0, replacing data with {data}")
+            return q, np.median(q[-length:], axis=0)
+
+        # # get z score of q and data and replace data if z score is greater than 3
+        # z = (data - np.mean(q, axis=0)) / std
+        # # if any of the z scores are greater than 3, replace data with last element in queue
+        # if any(abs(z) > threshold):
+        #     data = q[-1]
+        #     print(f"z score {z} is greater than {threshold}, replacing data with {data}")
+
+        q[-1] = data
+
+    return q, np.median(q[-length:], axis=0)
 
 
 def main():
-
     # initialize camera
     cap = initCamera(
         camera=0, width=320, height=240, fps=100, exposure=10, gain=1, gamma=72
@@ -233,6 +263,15 @@ def main():
     prev_frame_time = time.time()
     start_time = prev_frame_time
 
+    length = 100
+    # define a deque for rots and tvecs
+    rots_q = np.zeros(
+        (length, 3),
+    )
+    tvecs_q = np.zeros(
+        (length, 3),
+    )
+
     # main loop: retrieves and displays a frame from the camera
     while True:
         frames += 1
@@ -244,12 +283,12 @@ def main():
 
         raw = rots.copy()
         # smooth out the rots and tvecs data
-        rots[0] = med_filter(q1, rots[0])
-        rots[1] = med_filter(q2, rots[1])
-        rots[2] = med_filter(q3, rots[2])
+        # rots_q, raw = med_filter(rots_q, rots, length=11, threshold=50)
 
-
-
+        # rots_q = np.roll(rots_q, -1, axis=0)
+        # rots_q[-1] = rots
+        # raw = np.median(rots_q[-7:], axis=0)
+        # raw = np.median([[1,2,3],[1,2,3],[1,2,3],[4,5,6]], axis=0)
 
         send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=raw)
 
