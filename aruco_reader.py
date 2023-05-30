@@ -10,7 +10,7 @@ context = zmq.Context()
 socket = context.socket(zmq.PUB)
 socket.bind("tcp://*:9872")
 
-# # settings camera C270
+# # # settings camera C270
 # mtx = np.float32(
 #     [
 #         [794.71614391, 0.00000000e00, 347.55631962],
@@ -42,14 +42,33 @@ socket.bind("tcp://*:9872")
 # distCoeffs = dist
 
 
+# camMatrix = np.array(
+#     [
+#         [414.27012444, 0.0, 121.72543149],
+#         [0.0, 417.61613241, 118.45872165],
+#         [0.0, 0.0, 1.0],
+#     ]
+# )
+
+# distCoeffs = np.array([-0.0718088, -0.56184252, 0.0, 0.0, 0.0])
+
+
+# camMatrix = np.array(
+#     [[561.66328987, 0.0, 222.26714081], [0.0, 576.0033003, 45.4257314], [0.0, 0.0, 1.0]]
+# )
+
+# distCoeffs = np.array([-0.59024153, 0.93091843, 0.0, 0.0, 0.0])
+
+
 camMatrix = np.array(
     [
-        [3.18178993e03, 0.00000000e00, 3.56480383e02],
-        [0.00000000e00, 3.21028738e03, 2.68906759e02],
-        [0.00000000e00, 0.00000000e00, 1.00000000e00],
+        [6.50856758e03, 0.0, 1.10083914e03],
+        [0.0, 6.30754974e03, 9.91675258e02],
+        [0.0, 0.0, 1.0],
     ]
 )
-distCoeffs = np.array([-9.14669792, -0.43721955, 0.0, 0.0, 0.0])
+
+distCoeffs = np.array([-1.35819889, -33.06472559, 0.0, 0.0, 0.0])
 
 
 def isRotationMatrix(R):
@@ -249,7 +268,7 @@ def med_filter(q, data, length=11, threshold=3):
 def main():
     # initialize camera
     cap = initCamera(
-        camera=0, width=320, height=240, fps=100, exposure=10, gain=1, gamma=72
+        camera=0, width=640, height=480, fps=100, exposure=10, gain=1, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)

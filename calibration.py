@@ -1,6 +1,7 @@
 import cv2
 import cv2.aruco as aruco
 import numpy as np
+from aruco_reader import initCamera
 
 # Define the ArUco dictionary and parameters
 aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
@@ -28,54 +29,30 @@ objp[2, :] = [aruco_square_dimension, aruco_square_dimension, 0]
 objp[3, 1] = aruco_square_dimension
 
 
-def initCamera(
-    camera=0, width=640, height=480, fps=60, exposure=150, gain=40, gamma=160
-):
-    # create display window
-    cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
-
-    # initialize webcam capture object
-    cap = cv2.VideoCapture(camera)
-    cap.set(
-        cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G")
-    )  # depends on fourcc available camera
-
-    # set resolution
-    cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-
-    # set fps
-    cap.set(cv2.CAP_PROP_FPS, fps)
-
-    # set exposure
-    cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
-    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
-
-    # set gain and gamma
-    cap.set(cv2.CAP_PROP_GAIN, gain)
-    cap.set(cv2.CAP_PROP_GAMMA, gamma)
-
-    return cap
-
-
 # You can use your webcam, a video file or a set of images to collect the samples
-cap = initCamera(camera=0, width=640, height=480, fps=15, exposure=10, gain=1, gamma=72)
-
+cap = initCamera(
+    camera=0, width=1920, height=1080, fps=100, exposure=10, gain=1, gamma=72
+)
+frame_counter = 0
+calibrate_every_n_frames = 15
 while True:
     ret, frame = cap.read()
+    frame_counter += 1
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     corners, ids, _ = aruco.detectMarkers(gray, aruco_dict, parameters=parameters)
 
     if ids is not None:
-        all_corners.append(corners)
-        all_ids.append(ids)
-
-        for corner in corners:
-            img_points.append(corner)
-            obj_points.append(objp)
-
         # Display the ArUco markers detected in the image
         frame = aruco.drawDetectedMarkers(frame, corners)
+
+        # Append every Nth frame
+        if frame_counter % calibrate_every_n_frames == 0:
+            all_corners.append(corners)
+            all_ids.append(ids)
+
+            for corner in corners:
+                img_points.append(corner)
+                obj_points.append(objp)
 
     cv2.imshow("frame", frame)
 
@@ -87,6 +64,24 @@ cap.release()
 cv2.destroyAllWindows()
 
 # After collecting enough samples, perform the calibration
+
+# save all the samples needed for calibration and have an option to calibrate from them
+np.savez(
+    "calibration.npz",
+    all_corners=all_corners,
+    all_ids=all_ids,
+    img_points=img_points,
+    obj_points=obj_points,
+)
+
+if False:
+    # load the samples
+    npzfile = np.load("calibration.npz")
+    all_corners = npzfile["all_corners"]
+    all_ids = npzfile["all_ids"]
+    img_points = npzfile["img_points"]
+    obj_points = npzfile["obj_points"]
+
 
 retval, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
     obj_points, img_points, gray.shape[::-1], None, None, flags=calibration_flags
