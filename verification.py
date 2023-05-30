@@ -1,23 +1,7 @@
 import numpy as np
 import cv2
-from aruco_reader import initCamera
+from aruco_reader import initCamera, camMatrix, distCoeffs
 
-# camMatrix = np.array(
-#     [
-#         [414.27012444, 0.0, 121.72543149],
-#         [0.0, 417.61613241, 118.45872165],
-#         [0.0, 0.0, 1.0],
-#     ]
-# )
-# distCoeffs = np.array([-0.0718088, -0.56184252, 0.0, 0.0, 0.0])
-
-camMatrix = np.array([
-    [561.66328987, 0.0, 222.26714081],
-    [0.0, 576.0033003, 45.4257314],
-    [0.0, 0.0, 1.0]
-])
-
-distCoeffs = np.array([-0.59024153, 0.93091843, 0.0, 0.0, 0.0])
 
 def undistort_image(img, cam_matrix, dist_coeffs):
     h, w = img.shape[:2]
