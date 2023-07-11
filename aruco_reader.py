@@ -71,6 +71,17 @@ camMatrix = np.array(
 distCoeffs = np.array([-1.35819889, -33.06472559, 0.0, 0.0, 0.0])
 
 
+# camMatrix = np.array(
+#     [
+#         [2.33892951e03, 0.00000000e00, 5.96081825e02],
+#         [0.00000000e00, 2.34113194e03, -3.48958637e00],
+#         [0.00000000e00, 0.00000000e00, 1.00000000e00],
+#     ]
+# )
+
+# distCoeffs = np.array([-0.3450407, 0.13743711, 0.0, 0.0, 0.0])
+
+
 def isRotationMatrix(R):
     Rt = np.transpose(R)
     shouldBeIdentity = np.dot(Rt, R)
