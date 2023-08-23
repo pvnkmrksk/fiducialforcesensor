@@ -31,4 +31,4 @@ def create_grid_image(resolution: tuple, cell_size: int):
 
 
 if __name__ == "__main__":
-    create_grid_image((1920, 1080), 128)
+    create_grid_image((1024, 768), 128)

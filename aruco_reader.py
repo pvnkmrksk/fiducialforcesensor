@@ -10,76 +10,15 @@ context = zmq.Context()
 socket = context.socket(zmq.PUB)
 socket.bind("tcp://*:9872")
 
-# # # settings camera C270
-# mtx = np.float32(
-#     [
-#         [794.71614391, 0.00000000e00, 347.55631962],
-#         [0.00000000e00, 794.71614391, 293.50160806],
-#         [0.00000000e00, 0.00000000e00, 1.00000000e00],
-#     ]
-# )
-
-# dist = np.float32(
-#     [
-#         [-2.45415937e-01],
-#         [-6.48440697e00],
-#         [3.54169640e-02],
-#         [9.11031500e-03],
-#         [-1.09181519e02],
-#         [-1.23188350e-01],
-#         [-7.76776901e00],
-#         [-1.05816513e02],
-#         [0.00000000e00],
-#         [0.00000000e00],
-#         [0.00000000e00],
-#         [0.00000000e00],
-#         [0.00000000e00],
-#         [0.00000000e00],
-#     ]
-# )
-
-# camMatrix = mtx
-# distCoeffs = dist
-
-
-# camMatrix = np.array(
-#     [
-#         [414.27012444, 0.0, 121.72543149],
-#         [0.0, 417.61613241, 118.45872165],
-#         [0.0, 0.0, 1.0],
-#     ]
-# )
-
-# distCoeffs = np.array([-0.0718088, -0.56184252, 0.0, 0.0, 0.0])
-
-
-# camMatrix = np.array(
-#     [[561.66328987, 0.0, 222.26714081], [0.0, 576.0033003, 45.4257314], [0.0, 0.0, 1.0]]
-# )
-
-# distCoeffs = np.array([-0.59024153, 0.93091843, 0.0, 0.0, 0.0])
-
-
 camMatrix = np.array(
     [
-        [6.50856758e03, 0.0, 1.10083914e03],
-        [0.0, 6.30754974e03, 9.91675258e02],
-        [0.0, 0.0, 1.0],
+        [1.05154846e+03, 0.00000000e+00, 4.63966006e+02],
+        [0.00000000e+00, 1.01114221e+03, 3.33104507e+02],
+        [0.00000000e+00, 0.00000000e+00, 1.00000000e+00],
     ]
 )
 
-distCoeffs = np.array([-1.35819889, -33.06472559, 0.0, 0.0, 0.0])
-
-
-# camMatrix = np.array(
-#     [
-#         [2.33892951e03, 0.00000000e00, 5.96081825e02],
-#         [0.00000000e00, 2.34113194e03, -3.48958637e00],
-#         [0.00000000e00, 0.00000000e00, 1.00000000e00],
-#     ]
-# )
-
-# distCoeffs = np.array([-0.3450407, 0.13743711, 0.0, 0.0, 0.0])
+distCoeffs = np.array([-0.1291706, -1.17371679, 0., 0., 0.])
 
 
 def isRotationMatrix(R):
@@ -158,7 +97,7 @@ def get_pose(img, gray, aruco_dict, aruco_params):
         aruco.drawDetectedMarkers(img, corners, ids)
 
         (rvecs, tvecs, objpts) = aruco.estimatePoseSingleMarkers(
-            corners, 0.004, camMatrix, distCoeffs
+            corners, 0.01, camMatrix, distCoeffs
         )
         rotMat, jacob = cv2.Rodrigues(rvecs)
         rots = rotationMatrixToEulerAngles(rotMat)
@@ -225,11 +164,7 @@ def send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=None):
         "roll": rots[0],
         "pitch": rots[1],
         "yaw": rots[2],
-        # "raw0": raw[0],
-        # "raw1": raw[1],
-        # "raw2": raw[2],
-        # "avg": avg_fps,
-        # "cur": cur_fps,
+
     }
     # only send data if all values are not None
     if not any(np.array(list(data.values())) == None):
