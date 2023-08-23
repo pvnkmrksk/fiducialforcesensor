@@ -10,16 +10,19 @@ context = zmq.Context()
 socket = context.socket(zmq.PUB)
 socket.bind("tcp://*:9872")
 
-camMatrix = np.array(
-    [
-        [1.05154846e+03, 0.00000000e+00, 4.63966006e+02],
-        [0.00000000e+00, 1.01114221e+03, 3.33104507e+02],
-        [0.00000000e+00, 0.00000000e+00, 1.00000000e+00],
-    ]
-)
+# camMatrix = np.array(
+#     [
+#         [993.70145933, 0., 380.41292677],
+#         [0., 954.20031172, 299.2250873],
+#         [0., 0., 1.],
+#     ]
+# )
 
-distCoeffs = np.array([-0.1291706, -1.17371679, 0., 0., 0.])
+# distCoeffs = np.array([-0.57785208, 1.44508601, 0., 0., 0.])
 
+#read in camera matrix and distortion coefficients
+with np.load('calibration_results.npz') as X:
+    camMatrix, distCoeffs, _, _ = [X[i] for i in ('camera_matrix','dist_coeffs','rvecs','tvecs')]    
 
 def isRotationMatrix(R):
     Rt = np.transpose(R)
@@ -214,7 +217,7 @@ def med_filter(q, data, length=11, threshold=3):
 def main():
     # initialize camera
     cap = initCamera(
-        camera=0, width=640, height=480, fps=100, exposure=10, gain=1, gamma=72
+        camera=0, width=640, height=480, fps=100, exposure=22, gain=15, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)

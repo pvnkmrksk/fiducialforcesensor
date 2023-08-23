@@ -31,10 +31,10 @@ objp[3, 1] = aruco_square_dimension
 
 # You can use your webcam, a video file or a set of images to collect the samples
 cap = initCamera(
-        camera=0, width=640, height=480, fps=100, exposure=10, gain=1, gamma=72
-    )
+    camera=0, width=640, height=480, fps=100, exposure=22, gain=15, gamma=72
+)
 frame_counter = 0
-calibrate_every_n_frames = 15
+calibrate_every_n_frames = 10
 while True:
     ret, frame = cap.read()
     frame_counter += 1
@@ -89,3 +89,12 @@ retval, camera_matrix, dist_coeffs, rvecs, tvecs = cv2.calibrateCamera(
 
 print("Camera Matrix: ", camera_matrix)
 print("Distortion Coefficients: ", dist_coeffs)
+
+# Save the calibration results to a file
+np.savez(
+    "calibration_results.npz",
+    camera_matrix=camera_matrix,
+    dist_coeffs=dist_coeffs,
+    rvecs=rvecs,
+    tvecs=tvecs,
+)
