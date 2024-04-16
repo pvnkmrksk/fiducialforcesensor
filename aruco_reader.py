@@ -246,10 +246,13 @@ def main():
     while True:
         frames += 1
         new_frame_time = time.time()
-
-        rots, tvecs, img = read_get_pose(
-            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize
-        )
+        try:
+            rots, tvecs, img = read_get_pose(
+                cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize
+            )
+        except Exception as e:
+            print(e)
+            continue
 
         raw = rots.copy()
         # smooth out the rots and tvecs data
