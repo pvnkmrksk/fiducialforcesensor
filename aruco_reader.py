@@ -91,7 +91,7 @@ def read_image(cap):
     return img, gray
 
 
-def get_pose(img, gray, aruco_dict, aruco_params):
+def get_pose(img, gray, aruco_dict, aruco_params, tagSize):
     corners, ids, rejectedImgPoints = aruco.detectMarkers(
         gray, aruco_dict, parameters=aruco_params
     )
@@ -100,7 +100,7 @@ def get_pose(img, gray, aruco_dict, aruco_params):
         aruco.drawDetectedMarkers(img, corners, ids)
 
         (rvecs, tvecs, objpts) = aruco.estimatePoseSingleMarkers(
-            corners, 0.01, camMatrix, distCoeffs
+            corners, tagSize, camMatrix, distCoeffs
         )
         rotMat, jacob = cv2.Rodrigues(rvecs)
         rots = rotationMatrixToEulerAngles(rotMat)
@@ -113,9 +113,9 @@ def get_pose(img, gray, aruco_dict, aruco_params):
     return rots, tvecs
 
 
-def read_get_pose(cap, aruco_dict, aruco_params, rots_bl, tvecs_bl):
+def read_get_pose(cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize):
     img, gray = read_image(cap)
-    rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params)
+    rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params,tagSize)
 
     if rots[0] is not None and tvecs[0] is not None:
         rots = rots - rots_bl
@@ -128,7 +128,7 @@ def read_get_pose(cap, aruco_dict, aruco_params, rots_bl, tvecs_bl):
     return rots, tvecs, img
 
 
-def get_baseline(cap, aruco_dict, aruco_params, frames=10):
+def get_baseline(cap, aruco_dict, aruco_params, tagSize,frames=10):
     rots = []
     tvecs = []
 
@@ -137,7 +137,7 @@ def get_baseline(cap, aruco_dict, aruco_params, frames=10):
 
     for i in range(frames):
         rots_i, tvecs_i, img = read_get_pose(
-            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl
+            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize=0.01
         )
 
         if rots_i[0] is not None and tvecs_i[0] is not None:
@@ -215,16 +215,18 @@ def med_filter(q, data, length=11, threshold=3):
 
 
 def main():
+
+    tagSize=0.01 # units in meters. tvecs Output is in meters
     # initialize camera
     cap = initCamera(
-        camera=0, width=640, height=480, fps=100, exposure=22, gain=15, gamma=72
+        camera=0, width=640, height=480, fps=100, exposure=22, gain=40, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[64]
     aruco_params = aruco.DetectorParameters_create()
 
-    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, frames=100)
+    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=100)
 
     # used to record the time when we processed last frame
     avg_fps, cur_fps, frames = 0, 0, 0
@@ -246,7 +248,7 @@ def main():
         new_frame_time = time.time()
 
         rots, tvecs, img = read_get_pose(
-            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl
+            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize
         )
 
         raw = rots.copy()
