@@ -160,15 +160,22 @@ def get_baseline(cap, aruco_dict, aruco_params, tagSize,frames=10):
 def send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=None):
     if raw is None:
         raw = [0, 0, 0]
-    data = {
-        "x": tvecs[0],
-        "y": tvecs[1],
-        "z": tvecs[2],
-        "roll": rots[0],
-        "pitch": rots[1],
-        "yaw": rots[2],
 
-    }
+    try:
+        
+        data = {
+            "x": tvecs[0],
+            "y": tvecs[1],
+            "z": tvecs[2],
+            "roll": rots[0],
+            "pitch": rots[1],
+            "yaw": rots[2],
+
+        }
+
+    except Exception as e:
+        print(e)
+        return
     # only send data if all values are not None
     if not any(np.array(list(data.values())) == None):
         socket.send_json(data)
@@ -219,14 +226,14 @@ def main():
     tagSize=0.01 # units in meters. tvecs Output is in meters
     # initialize camera
     cap = initCamera(
-        camera=0, width=640, height=480, fps=100, exposure=22, gain=40, gamma=72
+        camera=0, width=1280, height=800, fps=120, exposure=22, gain=15, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[64]
     aruco_params = aruco.DetectorParameters_create()
 
-    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=100)
+    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=100)#)00)
 
     # used to record the time when we processed last frame
     avg_fps, cur_fps, frames = 0, 0, 0
@@ -242,14 +249,19 @@ def main():
         (length, 3),
     )
 
+    time_header = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+
     # main loop: retrieves and displays a frame from the camera
     while True:
         frames += 1
-        new_frame_time = time.time()
+        # new_frame_time = time.time()
         try:
             rots, tvecs, img = read_get_pose(
                 cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize
             )
+
+            # cv2.imwrite(f"aruco_images/{time_header}_{frames}.jpg", img)
+
         except Exception as e:
             print(e)
             continue
@@ -265,22 +277,41 @@ def main():
 
         send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=raw)
 
-        # compute fps: current_time - last_time
-        delta_time = new_frame_time - start_time
-        avg_fps = np.around(frames / delta_time, 1)
-        cur_fps = np.round(1 / (new_frame_time - prev_frame_time), 2)
-        prev_frame_time = new_frame_time
+        # # compute fps: current_time - last_time
+        # delta_time = new_frame_time - start_time
+        # avg_fps = np.around(frames / delta_time, 1)
+        # cur_fps = np.round(1 / (new_frame_time - prev_frame_time), 2)
+        # prev_frame_time = new_frame_time
 
-        cv2.imshow("webcam", img)
-        # wait 1ms for ESC to be pressed
-        key = cv2.waitKey(1)
-        if key == 27:
-            break
+
+
+        # cv2.imshow("webcam", img)
+
+        # #save the image as sequence of images
+        # # wait 1ms for ESC to be pressed
+        # key = cv2.waitKey(1)
+        # if key == 27:
+        #     break
 
     # release resources
     cv2.destroyAllWindows()
     cap.release()
 
 
+# if __name__ == "__main__":
+#     main()
+
+import cProfile
+import pstats
+
 if __name__ == "__main__":
-    main()
+    profiler = cProfile.Profile()
+    profiler.enable()
+    try:
+        main()
+
+    except KeyboardInterrupt:
+        pass
+    profiler.disable()
+    stats = pstats.Stats(profiler)
+    stats.dump_stats('profile_results.prof')
