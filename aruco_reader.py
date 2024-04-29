@@ -21,7 +21,7 @@ socket.bind("tcp://*:9872")
 # distCoeffs = np.array([-0.57785208, 1.44508601, 0., 0., 0.])
 
 #read in camera matrix and distortion coefficients
-with np.load('calibration_results.npz') as X:
+with np.load('camera_calibration_results.npz') as X:
     camMatrix, distCoeffs, _, _ = [X[i] for i in ('camera_matrix','dist_coeffs','rvecs','tvecs')]    
 
 def isRotationMatrix(R):
@@ -226,7 +226,7 @@ def main():
     tagSize=0.01 # units in meters. tvecs Output is in meters
     # initialize camera
     cap = initCamera(
-        camera=0, width=1280, height=800, fps=120, exposure=22, gain=15, gamma=72
+        camera=0, width=640, height=480, fps=120, exposure=22, gain=15, gamma=72
     )
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
@@ -285,13 +285,13 @@ def main():
 
 
 
-        # cv2.imshow("webcam", img)
+        cv2.imshow("webcam", img)
 
         # #save the image as sequence of images
         # # wait 1ms for ESC to be pressed
-        # key = cv2.waitKey(1)
-        # if key == 27:
-        #     break
+        key = cv2.waitKey(1)
+        if key == 27:
+            break
 
     # release resources
     cv2.destroyAllWindows()

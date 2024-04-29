@@ -67,7 +67,7 @@ cv2.destroyAllWindows()
 
 # save all the samples needed for calibration and have an option to calibrate from them
 np.savez(
-    "calibration.npz",
+    "camera_calibration.npz",
     all_corners=all_corners,
     all_ids=all_ids,
     img_points=img_points,
@@ -92,7 +92,7 @@ print("Distortion Coefficients: ", dist_coeffs)
 
 # Save the calibration results to a file
 np.savez(
-    "calibration_results.npz",
+    "camera_calibration_results.npz",
     camera_matrix=camera_matrix,
     dist_coeffs=dist_coeffs,
     rvecs=rvecs,
