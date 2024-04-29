@@ -22,14 +22,38 @@ raw_data_file = "stiffness_data_raw.csv"
 force = [0, 0, 0]
 torque = [0, 0, 0]
 
-# Helper function to calculate force and torque
-def calculate_force_torque(mass, length):
-    force = mass * G
-    torque = force * length
-    return force, torque
+def calculate_force(mass):
+    """
+    Calculate the force based on the given mass.
 
-# Data collection thread
+    Args:
+        mass (float): Mass in grams (g).
+
+    Returns:
+        float: Force in Newtons (N).
+    """
+    return mass * G / 1000  # Convert grams to kilograms
+
+def calculate_torque(mass, length):
+    """
+    Calculate the torque based on the given mass and length.
+
+    Args:
+        mass (float): Mass in grams (g).
+        length (float): Length in millimeters (mm).
+
+    Returns:
+        float: Torque in Newton-meters (N·m).
+    """
+    return calculate_force(mass) * length / 1000  # Convert millimeters to meters
+
 def collect_data(collection_duration):
+    """
+    Collect data for the specified duration.
+
+    Args:
+        collection_duration (float): Duration of data collection in seconds.
+    """
     data = []
     start_time = time.time()
     
@@ -58,8 +82,10 @@ def collect_data(collection_duration):
     else:
         print("No data collected.")
 
-# ZMQ data subscription thread
 def subscribe_data():
+    """
+    Subscribe to the ZMQ data stream and save the raw data to a CSV file.
+    """
     with open(raw_data_file, "a", newline="") as file:
         csv_writer = csv.writer(file)
         
@@ -76,8 +102,10 @@ def subscribe_data():
             
             time.sleep(0.001)  # Small delay to avoid high CPU usage
 
-# Main CLI loop
 def main():
+    """
+    Main function to run the Force/Torque Data Collection CLI.
+    """
     global force, torque
     
     print("Force/Torque Data Collection CLI")
@@ -98,11 +126,10 @@ def main():
     subscription_thread = threading.Thread(target=subscribe_data)
     subscription_thread.daemon = True
     subscription_thread.start()
-    
     while True:
         print("\nOptions:")
-        print("1. Enter force and torque values")
-        print("2. Enter mass and length (to calculate force and torque)")
+        print("1. Enter force and torque values (in N and N·m)")
+        print("2. Enter mass values (in grams) for force and torque")
         print("3. Exit")
         
         choice = input("Enter your choice (1-3): ")
@@ -116,11 +143,11 @@ def main():
                 continue
         elif choice == "2":
             try:
-                mass = float(input("Enter mass (kg): "))
-                length = float(input("Enter length (m): "))
-                force_val, torque_val = calculate_force_torque(mass, length)
-                force = [force_val, 0, 0]
-                torque = [0, 0, torque_val]
+                force = [calculate_force(float(input(f"Enter mass for {axis}-axis force (g): "))) for axis in ["x", "y", "z"]]
+                torque = [calculate_torque(
+                    float(input(f"Enter mass for {axis}-axis torque (g): ")),
+                    float(input(f"Enter length for {axis}-axis torque (mm): "))
+                ) for axis in ["x", "y", "z"]]
             except ValueError:
                 print("Invalid input. Please enter numeric values.")
                 continue
@@ -129,13 +156,13 @@ def main():
         else:
             print("Invalid choice. Please try again.")
             continue
-        
+            
         try:
             collection_duration = float(input("Enter the data collection duration (in seconds): "))
         except ValueError:
             print("Invalid input. Please enter a numeric value.")
             continue
-        
+    
         input("Press Enter to start data collection...")
         print("Collecting data...")
         
