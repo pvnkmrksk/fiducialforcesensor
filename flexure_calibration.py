@@ -106,27 +106,32 @@ def perform_analysis():
     """
     Perform stiffness matrix analysis based on the collected data.
     """
-    # Load the collected data from the CSV file
-    data = np.genfromtxt(data_file, delimiter=',', skip_header=1)
-    
-    if len(data) == 0:
-        print("No data available for analysis. Please collect data first.")
-        return
-    
-    # Split the data into force/torque and displacement/rotation matrices
-    A_force = data[:, :6]
-    A_disp = data[:, 6:]
-    
-    # Estimate the stiffness matrix using least-squares
-    k = np.linalg.lstsq(A_force, A_disp, rcond=None)[0]
-    
-    # Print the estimated stiffness matrix
-    print("\nEstimated Stiffness Matrix (K):")
-    print(k)
-    
-    # Save the stiffness matrix to a file
-    np.savetxt("stiffness_matrix.txt", k, delimiter=',')
-    print("Stiffness matrix saved to 'stiffness_matrix.txt'.")
+    try:
+        # Load the collected data from the CSV file
+        data = np.genfromtxt(data_file, delimiter=',', skip_header=1)
+        
+        if len(data) == 0:
+            print("No data available for analysis. Please collect data first.")
+            return
+        
+        # Split the data into force/torque and displacement/rotation matrices
+        A_force = data[:, :6]
+        A_disp = data[:, 6:]
+        
+        # Estimate the stiffness matrix using least-squares
+        k = np.linalg.lstsq(A_force, A_disp, rcond=None)[0]
+        
+        # Print the estimated stiffness matrix
+        print("\nEstimated Stiffness Matrix (K):")
+        print(k)
+        
+        # Save the stiffness matrix to a file
+        np.savetxt("stiffness_matrix.txt", k, delimiter=',')
+        print("Stiffness matrix saved to 'stiffness_matrix.txt'.")
+    except FileNotFoundError:
+        print("Data file not found. Please collect data first.")
+    except ValueError as ve:
+        print(f"Error during analysis: {ve}")
 
 def main():
     """
@@ -137,7 +142,6 @@ def main():
     print("Force/Torque Data Collection CLI")
     print("----------------------------------")
     
-    # ask for a 
     # Create the data files if they don't exist
     if not os.path.exists(data_file):
         with open(data_file, "w", newline="") as file:
@@ -153,13 +157,14 @@ def main():
     subscription_thread = threading.Thread(target=subscribe_data)
     subscription_thread.daemon = True
     subscription_thread.start()
+    
     while True:
         print("\nOptions:")
         print("1. Enter force and torque values (in N and N·m)")
         print("2. Enter mass values (in grams) for force and torque")
-        print("3. Exit")
-        print("4. Perform stiffness matrix analysis")
-
+        print("3. Perform stiffness matrix analysis")
+        print("4. Exit")
+        
         choice = input("Enter your choice (1-4): ")
         
         if choice == "1":
@@ -180,21 +185,21 @@ def main():
                 print("Invalid input. Please enter numeric values.")
                 continue
         elif choice == "3":
-            break
-
-        elif choice == "4":
             perform_analysis()
             continue
+        elif choice == "4":
+            break
+
         else:
             print("Invalid choice. Please try again.")
             continue
-            
+        
         try:
             collection_duration = float(input("Enter the data collection duration (in seconds): "))
         except ValueError:
             print("Invalid input. Please enter a numeric value.")
             continue
-    
+        
         input("Press Enter to start data collection...")
         print("Collecting data...")
         
