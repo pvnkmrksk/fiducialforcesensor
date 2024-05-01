@@ -1,3 +1,5 @@
+import datetime
+import json
 import zmq
 import numpy as np
 import csv
@@ -8,13 +10,21 @@ import time
 # ZMQ configuration
 context = zmq.Context()
 socket = context.socket(zmq.SUB)
-socket.connect("tcp://localhost:9872")
+socket.connect("tcp://localhost:9873")
 socket.setsockopt_string(zmq.SUBSCRIBE, "")
 
 # Constants
 G = 9.81  # Acceleration due to gravity (m/s^2)
 
+
+now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 # Data collection parameters
+
+
+# data_file = f"stiffness_data_{now}.csv"
+# 
+# raw_data_file = f"stiffness_data_raw_{now}.csv"
+
 data_file = "stiffness_data.csv"
 raw_data_file = "stiffness_data_raw.csv"
 
@@ -32,7 +42,9 @@ def calculate_force(mass):
     Returns:
         float: Force in Newtons (N).
     """
-    return mass * G / 1000  # Convert grams to kilograms
+    if mass == 0:
+        return 0
+    return mass * G / 1000
 
 def calculate_torque(mass, length):
     """
@@ -45,7 +57,10 @@ def calculate_torque(mass, length):
     Returns:
         float: Torque in Newton-meters (N·m).
     """
-    return calculate_force(mass) * length / 1000  # Convert millimeters to meters
+    if mass == 0 or length == 0:
+        return 0
+    return calculate_force(mass) * length / 1000
+
 
 def collect_data(collection_duration):
     """
@@ -54,33 +69,41 @@ def collect_data(collection_duration):
     Args:
         collection_duration (float): Duration of data collection in seconds.
     """
+
+
     data = []
     start_time = time.time()
-    
+
     while time.time() - start_time < collection_duration:
         try:
             pose_data = socket.recv_json(flags=zmq.NOBLOCK)
             data.append(force + torque + [
-                pose_data["x"], pose_data["y"], pose_data["z"],
-                pose_data["roll"], pose_data["pitch"], pose_data["yaw"]
+                pose_data.get("x", np.nan), pose_data.get("y", np.nan), pose_data.get("z", np.nan),
+                pose_data.get("roll", np.nan), pose_data.get("pitch", np.nan), pose_data.get("yaw", np.nan)
             ])
         except zmq.Again:
             pass
-        
-        time.sleep(0.001)  # Small delay to avoid high CPU usage
-    
+        except Exception as e:
+            print(f"Error during data collection: {e}")
+
+        time.sleep(0.001)
+
     if data:
-        # Calculate the mean of each axis
-        mean_data = np.mean(data, axis=0)
-        
-        # Append the mean data to the CSV file
-        with open(data_file, "a", newline="") as file:
-            csv_writer = csv.writer(file)
-            csv_writer.writerow(mean_data)
-        
+        print("Data being averaged.")
+
+        try:
+            data_array = np.array(data)
+            mean_data = np.nanmean(data_array, axis=0)
+            with open(data_file, "a", newline="") as file:
+                csv_writer = csv.writer(file)
+                csv_writer.writerow(mean_data)
+        except Exception as e:
+            print(f"Error during data averaging: {e}")
+
         print("Data collection completed.")
     else:
         print("No data collected.")
+
 
 def subscribe_data():
     """
@@ -88,7 +111,7 @@ def subscribe_data():
     """
     with open(raw_data_file, "a", newline="") as file:
         csv_writer = csv.writer(file)
-        
+
         while True:
             try:
                 pose_data = socket.recv_json(flags=zmq.NOBLOCK)
@@ -99,8 +122,12 @@ def subscribe_data():
                 ])
             except zmq.Again:
                 pass
-            
-            time.sleep(0.001)  # Small delay to avoid high CPU usage
+            except UnicodeDecodeError as ude:
+                print(f"Unicode decode error: {ude}")
+            except Exception as e:
+                print(f"Error during data subscription: {e}")
+
+            time.sleep(0.001)
 
 def perform_analysis():
     """
@@ -215,4 +242,15 @@ def main():
         print("Data collection stopped.")
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+
+    except Exception as e:
+        print(f"Error during execution: {e}")
+        print("\nForce/Torque Data Collection CLI terminated.")
+        
+    finally:
+        
+        socket.close()
+        context.term()
+        exit(0)

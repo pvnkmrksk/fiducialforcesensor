@@ -5,24 +5,20 @@ import datetime
 import time
 import zmq
 import json
+import threading
+from queue import Queue
 
 context = zmq.Context()
 socket = context.socket(zmq.PUB)
-socket.bind("tcp://*:9872")
+socket.bind("tcp://*:9873")
 
-# camMatrix = np.array(
-#     [
-#         [993.70145933, 0., 380.41292677],
-#         [0., 954.20031172, 299.2250873],
-#         [0., 0., 1.],
-#     ]
-# )
-
-# distCoeffs = np.array([-0.57785208, 1.44508601, 0., 0., 0.])
-
-#read in camera matrix and distortion coefficients
+# read in camera matrix and distortion coefficients
 with np.load('camera_calibration_results.npz') as X:
-    camMatrix, distCoeffs, _, _ = [X[i] for i in ('camera_matrix','dist_coeffs','rvecs','tvecs')]    
+    camMatrix, distCoeffs, _, _ = [X[i] for i in ('camera_matrix', 'dist_coeffs', 'rvecs', 'tvecs')]
+
+# ... (keep the utility functions as is)
+
+
 
 def isRotationMatrix(R):
     Rt = np.transpose(R)
@@ -111,21 +107,17 @@ def get_pose(img, gray, aruco_dict, aruco_params, tagSize):
         rots = [None, None, None]
 
     return rots, tvecs
-
-
-def read_get_pose(cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize):
-    img, gray = read_image(cap)
-    rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params,tagSize)
+def read_get_pose(img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize):
+    rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params, tagSize)
 
     if rots[0] is not None and tvecs[0] is not None:
         rots = rots - rots_bl
         tvecs = tvecs - tvecs_bl
-
     else:
         rots = [None, None, None]
         tvecs = [None, None, None]
 
-    return rots, tvecs, img
+    return rots, tvecs
 
 
 def get_baseline(cap, aruco_dict, aruco_params, tagSize,frames=10):
@@ -136,8 +128,10 @@ def get_baseline(cap, aruco_dict, aruco_params, tagSize,frames=10):
     tvecs_bl = np.array([0, 0, 0])
 
     for i in range(frames):
-        rots_i, tvecs_i, img = read_get_pose(
-            cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize=0.01
+        img, gray = read_image(cap)
+
+        rots_i, tvecs_i = read_get_pose(
+            img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize=0.01
         )
 
         if rots_i[0] is not None and tvecs_i[0] is not None:
@@ -162,23 +156,20 @@ def send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=None):
         raw = [0, 0, 0]
 
     try:
-        
         data = {
-            "x": tvecs[0],
-            "y": tvecs[1],
-            "z": tvecs[2],
-            "roll": rots[0],
-            "pitch": rots[1],
-            "yaw": rots[2],
-
+            "x": tvecs[0] if tvecs[0] is not None else np.nan,
+            "y": tvecs[1] if tvecs[1] is not None else np.nan,
+            "z": tvecs[2] if tvecs[2] is not None else np.nan,
+            "roll": rots[0] if rots[0] is not None else np.nan,
+            "pitch": rots[1] if rots[1] is not None else np.nan,
+            "yaw": rots[2] if rots[2] is not None else np.nan,
         }
-
     except Exception as e:
         print(e)
         return
-    # only send data if all values are not None
-    if not any(np.array(list(data.values())) == None):
-        socket.send_json(data)
+
+    # Send data even if some values are None
+    socket.send_json(data)
 
 
 def med_filter(q, data, length=11, threshold=3):
@@ -221,97 +212,87 @@ def med_filter(q, data, length=11, threshold=3):
     return q, np.median(q[-length:], axis=0)
 
 
-def main():
 
-    tagSize=0.01 # units in meters. tvecs Output is in meters
-    # initialize camera
-    cap = initCamera(
-        camera=0, width=640, height=480, fps=120, exposure=22, gain=15, gamma=72
-    )
+
+def camera_io_thread(cap, frame_queue):
+    while True:
+        try:
+            img, gray = read_image(cap)
+            frame_queue.put((img, gray))
+        except Exception as e:
+            print(e)
+            
+
+def main():
+    # cv2.setUseOptimized(True)
+    # cv2.setNumThreads(4)  # Adjust the number of threads based on your GPU
+
+    tagSize = 0.01  # units in meters. tvecs Output is in meters
+    # cap = initCamera(camera=0, width=640, height=480, fps=120, exposure=22, gain=12, gamma=72)
+    cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=22, gain=12, gamma=72)
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[64]
     aruco_params = aruco.DetectorParameters_create()
 
-    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=100)#)00)
+    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=500)
 
-    # used to record the time when we processed last frame
     avg_fps, cur_fps, frames = 0, 0, 0
     prev_frame_time = time.time()
     start_time = prev_frame_time
 
     length = 100
-    # define a deque for rots and tvecs
-    rots_q = np.zeros(
-        (length, 3),
-    )
-    tvecs_q = np.zeros(
-        (length, 3),
-    )
+    rots_q = np.zeros((length, 3))
+    tvecs_q = np.zeros((length, 3))
 
     time_header = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
 
-    # main loop: retrieves and displays a frame from the camera
+    frame_queue = Queue(maxsize=1)
+    camera_io = threading.Thread(target=camera_io_thread, args=(cap, frame_queue))
+    camera_io.daemon = True
+    camera_io.start()
+
     while True:
         frames += 1
-        # new_frame_time = time.time()
         try:
-            rots, tvecs, img = read_get_pose(
-                cap, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize
-            )
-
-            # cv2.imwrite(f"aruco_images/{time_header}_{frames}.jpg", img)
-
+            img, gray = frame_queue.get()
+            rots, tvecs = read_get_pose(img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize)
         except Exception as e:
             print(e)
             continue
 
         raw = rots.copy()
-        # smooth out the rots and tvecs data
-        # rots_q, raw = med_filter(rots_q, rots, length=11, threshold=50)
-
-        # rots_q = np.roll(rots_q, -1, axis=0)
-        # rots_q[-1] = rots
-        # raw = np.median(rots_q[-7:], axis=0)
-        # raw = np.median([[1,2,3],[1,2,3],[1,2,3],[4,5,6]], axis=0)
-
         send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=raw)
-
-        # # compute fps: current_time - last_time
-        # delta_time = new_frame_time - start_time
-        # avg_fps = np.around(frames / delta_time, 1)
-        # cur_fps = np.round(1 / (new_frame_time - prev_frame_time), 2)
-        # prev_frame_time = new_frame_time
-
-
 
         cv2.imshow("webcam", img)
 
-        # #save the image as sequence of images
-        # # wait 1ms for ESC to be pressed
         key = cv2.waitKey(1)
         if key == 27:
             break
 
-    # release resources
     cv2.destroyAllWindows()
     cap.release()
 
-
-# if __name__ == "__main__":
-#     main()
-
+# ... (keep the profiling code as is)
 import cProfile
 import pstats
 
 if __name__ == "__main__":
-    profiler = cProfile.Profile()
-    profiler.enable()
     try:
         main()
 
     except KeyboardInterrupt:
         pass
-    profiler.disable()
-    stats = pstats.Stats(profiler)
-    stats.dump_stats('profile_results.prof')
+# if __name__ == "__main__":
+#     profiler = cProfile.Profile()
+#     profiler.enable()
+#     try:
+#         main()
+
+#     except KeyboardInterrupt:
+#         pass
+#     profiler.disable()
+#     stats = pstats.Stats(profiler)
+#     stats.dump_stats('profile_results.prof')
+
+
