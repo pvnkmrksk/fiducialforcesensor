@@ -176,11 +176,15 @@ def main():
                 continue
         elif choice == "2":
             try:
-                force = [calculate_force(float(input(f"Enter mass for {axis}-axis force (g): "))) for axis in ["x", "y", "z"]]
-                torque = [calculate_torque(
-                    float(input(f"Enter mass for {axis}-axis torque (g): ")),
-                    float(input(f"Enter length for {axis}-axis torque (mm): "))
-                ) for axis in ["x", "y", "z"]]
+                force = []
+                torque = []
+                for axis in ["x", "y", "z"]:
+                    mass_force = float(input(f"Enter mass for {axis}-axis force (g): "))
+                    force.append(calculate_force(mass_force))
+
+                    mass_torque = float(input(f"Enter mass for {axis}-axis torque (g): "))
+                    length_torque = float(input(f"Enter length for {axis}-axis torque (mm): "))
+                    torque.append(calculate_torque(mass_torque, length_torque))
             except ValueError:
                 print("Invalid input. Please enter numeric values.")
                 continue
