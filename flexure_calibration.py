@@ -16,15 +16,7 @@ socket.setsockopt_string(zmq.SUBSCRIBE, "")
 # Constants
 G = 9.81  # Acceleration due to gravity (m/s^2)
 
-
 now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-# Data collection parameters
-
-
-# data_file = f"stiffness_data_{now}.csv"
-# 
-# raw_data_file = f"stiffness_data_raw_{now}.csv"
-
 data_file = "stiffness_data.csv"
 raw_data_file = "stiffness_data_raw.csv"
 
@@ -61,7 +53,6 @@ def calculate_torque(mass, length):
         return 0
     return calculate_force(mass) * length / 1000
 
-
 def collect_data(collection_duration):
     """
     Collect data for the specified duration.
@@ -69,24 +60,28 @@ def collect_data(collection_duration):
     Args:
         collection_duration (float): Duration of data collection in seconds.
     """
-
-
     data = []
     start_time = time.time()
 
-    while time.time() - start_time < collection_duration:
-        try:
-            pose_data = socket.recv_json(flags=zmq.NOBLOCK)
-            data.append(force + torque + [
-                pose_data.get("x", np.nan), pose_data.get("y", np.nan), pose_data.get("z", np.nan),
-                pose_data.get("roll", np.nan), pose_data.get("pitch", np.nan), pose_data.get("yaw", np.nan)
-            ])
-        except zmq.Again:
-            pass
-        except Exception as e:
-            print(f"Error during data collection: {e}")
+    with open(raw_data_file, "a", newline="") as file:
+        csv_writer = csv.writer(file)
 
-        time.sleep(0.001)
+        while time.time() - start_time < collection_duration:
+            try:
+                pose_data = socket.recv_json(flags=zmq.NOBLOCK)
+                timestamp = time.time()
+                row = [timestamp] + force + torque + [
+                    pose_data.get("x", np.nan), pose_data.get("y", np.nan), pose_data.get("z", np.nan),
+                    pose_data.get("roll", np.nan), pose_data.get("pitch", np.nan), pose_data.get("yaw", np.nan)
+                ]
+                csv_writer.writerow(row)
+                data.append(row[1:])  # Exclude the timestamp from the data for averaging
+            except zmq.Again:
+                pass
+            except Exception as e:
+                print(f"Error during data collection: {e}")
+
+            time.sleep(0.001)
 
     if data:
         print("Data being averaged.")
@@ -104,31 +99,6 @@ def collect_data(collection_duration):
     else:
         print("No data collected.")
 
-
-def subscribe_data():
-    """
-    Subscribe to the ZMQ data stream and save the raw data to a CSV file.
-    """
-    with open(raw_data_file, "a", newline="") as file:
-        csv_writer = csv.writer(file)
-
-        while True:
-            try:
-                pose_data = socket.recv_json(flags=zmq.NOBLOCK)
-                timestamp = time.time()
-                csv_writer.writerow([timestamp] + force + torque + [
-                    pose_data.get("x", np.nan), pose_data.get("y", np.nan), pose_data.get("z", np.nan),
-                    pose_data.get("roll", np.nan), pose_data.get("pitch", np.nan), pose_data.get("yaw", np.nan)
-                ])
-            except zmq.Again:
-                pass
-            except UnicodeDecodeError as ude:
-                print(f"Unicode decode error: {ude}")
-            except Exception as e:
-                print(f"Error during data subscription: {e}")
-
-            time.sleep(0.001)
-
 def perform_analysis():
     """
     Perform stiffness matrix analysis based on the collected data.
@@ -144,6 +114,9 @@ def perform_analysis():
         # Split the data into force/torque and displacement/rotation matrices
         A_force = data[:, :6]
         A_disp = data[:, 6:]
+        
+        # convert rotation to radians
+        A_disp[:, 3:] = np.radians(A_disp[:, 3:])
         
         # Estimate the stiffness matrix using least-squares
         k = np.linalg.lstsq(A_force, A_disp, rcond=None)[0]
@@ -180,11 +153,6 @@ def main():
             csv_writer = csv.writer(file)
             csv_writer.writerow(["Timestamp", "Fx", "Fy", "Fz", "Tx", "Ty", "Tz", "x", "y", "z", "roll", "pitch", "yaw"])
     
-    # Start the ZMQ data subscription thread
-    subscription_thread = threading.Thread(target=subscribe_data)
-    subscription_thread.daemon = True
-    subscription_thread.start()
-    
     while True:
         print("\nOptions:")
         print("1. Enter force and torque values (in N and N·m)")
@@ -220,7 +188,6 @@ def main():
             continue
         elif choice == "4":
             break
-
         else:
             print("Invalid choice. Please try again.")
             continue
@@ -234,23 +201,19 @@ def main():
         input("Press Enter to start data collection...")
         print("Collecting data...")
         
-        # Start the data collection thread
-        thread = threading.Thread(target=collect_data, args=(collection_duration,))
-        thread.start()
-        thread.join()  # Wait for the data collection to complete
+        # Start the data collection
+        collect_data(collection_duration)
         
         print("Data collection stopped.")
 
 if __name__ == "__main__":
     try:
         main()
-
+    except KeyboardInterrupt:
+        print("\nForce/Torque Data Collection CLI terminated.")
     except Exception as e:
         print(f"Error during execution: {e}")
-        print("\nForce/Torque Data Collection CLI terminated.")
-        
     finally:
-        
         socket.close()
         context.term()
         exit(0)

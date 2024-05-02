@@ -77,6 +77,12 @@ def initCamera(
     cap.set(cv2.CAP_PROP_GAIN, gain)
     cap.set(cv2.CAP_PROP_GAMMA, gamma)
 
+
+    #set brightness
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, 0)
+
+    #set contrast
+    cap.set(cv2.CAP_PROP_CONTRAST, 58)
     return cap
 
 
@@ -224,12 +230,13 @@ def camera_io_thread(cap, frame_queue):
             
 
 def main():
-    # cv2.setUseOptimized(True)
-    # cv2.setNumThreads(4)  # Adjust the number of threads based on your GPU
+    cv2.setUseOptimized(True)
+    cv2.setNumThreads(8)  # Adjust the number of threads based on your GPU
 
     tagSize = 0.01  # units in meters. tvecs Output is in meters
     # cap = initCamera(camera=0, width=640, height=480, fps=120, exposure=22, gain=12, gamma=72)
-    cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=22, gain=12, gamma=72)
+    # cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=22, gain=12, gamma=72)
+    cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=10, gain=10, gamma=72)
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[64]
