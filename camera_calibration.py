@@ -30,9 +30,8 @@ objp[3, 1] = aruco_square_dimension
 
 
 # You can use your webcam, a video file or a set of images to collect the samples
-cap = initCamera(
-    camera=0, width=640, height=480, fps=100, exposure=22, gain=15, gamma=72
-)
+cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=10, gain=10, gamma=72)
+
 frame_counter = 0
 calibrate_every_n_frames = 10
 while True:

@@ -16,7 +16,6 @@ socket.setsockopt_string(zmq.SUBSCRIBE, "")
 # Constants
 G = 9.81  # Acceleration due to gravity (m/s^2)
 
-now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 data_file = "stiffness_data.csv"
 raw_data_file = "stiffness_data_raw.csv"
 
@@ -117,7 +116,7 @@ def perform_analysis():
         
         # convert rotation to radians
         A_disp[:, 3:] = np.radians(A_disp[:, 3:])
-        
+
         # Estimate the stiffness matrix using least-squares
         k = np.linalg.lstsq(A_force, A_disp, rcond=None)[0]
         
@@ -137,10 +136,64 @@ def main():
     """
     Main function to run the Force/Torque Data Collection CLI.
     """
-    global force, torque
+    global force, torque, data_file, raw_data_file
     
     print("Force/Torque Data Collection CLI")
     print("----------------------------------")
+
+    # ask user if they want a new file or to append to an existing file
+    file_option = input("Do you want to create a new file or append to an existing file? (Enter 'new' or 'append'): ")
+    
+    #new or n 
+    if file_option in ["new", "n"] or not os.path.exists(data_file) or not os.path.exists(raw_data_file):
+        # Create new data files
+        #append time stamp to the file name
+        now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        data_file = f"stiffness_data_{now}.csv"
+        raw_data_file = f"stiffness_data_raw_{now}.csv"
+
+        with open(data_file, "w", newline="") as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow(["Fx", "Fy", "Fz", "Tx", "Ty", "Tz", "x", "y", "z", "roll", "pitch", "yaw"])
+        
+        with open(raw_data_file, "w", newline="") as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow(["Timestamp", "Fx", "Fy", "Fz", "Tx", "Ty", "Tz", "x", "y", "z", "roll", "pitch", "yaw"])
+
+        print(f"New data files created: {data_file}, {raw_data_file}")
+
+    elif file_option in ["append", "a"]:
+        # Check if the data files already exist
+        if not os.path.exists(data_file) or not os.path.exists(raw_data_file):
+            print("Data files not found. Creating new files instead.")
+            
+            with open(data_file, "w", newline="") as file:
+                csv_writer = csv.writer(file)
+                csv_writer.writerow(["Fx", "Fy", "Fz", "Tx", "Ty", "Tz", "x", "y", "z", "roll", "pitch", "yaw"])
+            
+            with open(raw_data_file, "w", newline="") as file:
+                csv_writer = csv.writer(file)
+                csv_writer.writerow(["Timestamp", "Fx", "Fy", "Fz", "Tx", "Ty", "Tz", "x", "y", "z", "roll", "pitch", "yaw"])
+
+        print(f"Appending data to existing files: {data_file}, {raw_data_file}")
+    else:
+        print("Invalid option. Creating new files instead.")
+        now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        data_file = f"stiffness_data_{now}.csv"
+        raw_data_file = f"stiffness_data_raw_{now}.csv"
+
+        with open(data_file, "w", newline="") as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow(["Fx", "Fy", "Fz", "Tx", "Ty", "Tz", "x", "y", "z", "roll", "pitch", "yaw"])
+        
+        with open(raw_data_file, "w", newline="") as file:
+            csv_writer = csv.writer(file)
+            csv_writer.writerow(["Timestamp", "Fx", "Fy", "Fz", "Tx", "Ty", "Tz", "x", "y", "z", "roll", "pitch", "yaw"])
+
+        print(f"New data files created: {data_file}, {raw_data_file}")
+    
+
+    
     
     # Create the data files if they don't exist
     if not os.path.exists(data_file):

@@ -82,7 +82,7 @@ def initCamera(
     cap.set(cv2.CAP_PROP_BRIGHTNESS, 0)
 
     #set contrast
-    cap.set(cv2.CAP_PROP_CONTRAST, 58)
+    cap.set(cv2.CAP_PROP_CONTRAST, 32)
     return cap
 
 
