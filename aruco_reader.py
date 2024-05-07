@@ -10,7 +10,7 @@ from queue import Queue
 
 context = zmq.Context()
 socket = context.socket(zmq.PUB)
-socket.bind("tcp://*:9873")
+socket.bind("tcp://*:9872")
 
 # read in camera matrix and distortion coefficients
 with np.load('camera_calibration_results.npz') as X:
@@ -51,7 +51,7 @@ def rotationMatrixToEulerAngles(R):
 
 
 def initCamera(
-    camera=0, width=320, height=240, fps=100, exposure=150, gain=40, gamma=160
+    camera=0, width=320, height=240, fps=100, exposure=150, gain=40, gamma=160, brightness=0, contrast=32
 ):
     # create display window
     cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
@@ -79,10 +79,10 @@ def initCamera(
 
 
     #set brightness
-    cap.set(cv2.CAP_PROP_BRIGHTNESS, 0)
+    cap.set(cv2.CAP_PROP_BRIGHTNESS, brightness)
 
     #set contrast
-    cap.set(cv2.CAP_PROP_CONTRAST, 32)
+    cap.set(cv2.CAP_PROP_CONTRAST, contrast)
     return cap
 
 

@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import welch, hamming
 import easygui as eg
 import argparse
+from plotly.subplots import make_subplots
 
 def load_data(filepath):
     """
@@ -26,40 +27,89 @@ def remove_dc_offset(signal):
     """
     return signal - np.mean(signal)
 
-def spectral_analysis_welch(data, channel_names, sampling_rate, nperseg=None):
+import plotly.graph_objects as go
+
+# it is all plotting on one. make it each in a separate plot, all 2 rows, 3 cols. the rotation in bottom col corresponding to the axes of its rotation, with labels on each subplots. and also semilog with power in log
+
+def spectral_analysis_plotly(data, channel_names, sampling_rate, nperseg=None):
     """
-    Perform spectral analysis using Welch's method.
+    Perform spectral analysis using Welch's method and plot the results using Plotly.
     Args:
         data (pandas.DataFrame): DataFrame containing the signals.
         channel_names (list): List of channel names to analyze.
         sampling_rate (float): The sampling rate of the data.
         nperseg (int): Number of points in each segment for Welch's method.
+
     """
-    plt.figure(figsize=(15, 12))
-    
+    fig = make_subplots(rows=2, cols=3, subplot_titles=channel_names)
+    # fig = go.subplots(rows=2, cols=3, subplot_titles=channel_names)
+
     for i, channel in enumerate(channel_names):
         # Remove DC offset
         signal_no_dc = remove_dc_offset(data[channel])
-        
+
         # Compute the Welch's power spectral density estimate
         freqs, psd = welch(signal_no_dc, fs=sampling_rate, window='hamming', nperseg=nperseg, scaling='density')
-        
-        #normalize the PSD to area = 1
-        # psd = psd / np.sum(psd)
 
-        # Plot the PSD
-        plt.subplot(len(channel_names), 1, i + 1)
-        # plt.plot(freqs, psd)
-        plt.semilogy(freqs, psd)
+        # Plot the PSD in a separate subplot
+        row = i // 3 + 1
+        col = i % 3 + 1
+        fig.add_trace(go.Scatter(x=freqs, y=psd, mode='lines', name=channel), row=row, col=col)
 
-        plt.title(f'Power Spectral Density of {channel}')
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('PSD (Power/Frequency)')
-        plt.grid(True)
-    
-    plt.tight_layout()
-    plt.savefig('spectral_analysis_welch.png')
-    plt.show()
+        # # Set the subplot title
+        # fig.update_layout(title_text=channel, row=row, col=col)
+
+        # Set the x-axis and y-axis titles
+        fig.update_xaxes(title_text='Frequency (Hz)', row=row, col=col)
+        fig.update_yaxes(title_text='PSD (Power/Frequency)', row=row, col=col)
+
+        # Set the y-axis to logarithmic scale
+        fig.update_yaxes(type='log', row=row, col=col)
+
+    # fig.update_layout(
+    #     title='Power Spectral Density',
+    #     grid = {
+    #         'rows':2,
+    #         'columns':3,
+    #         'pattern': "independent"
+    #     }
+    # )
+
+    fig.show()
+
+# def spectral_analysis_plotly(data, channel_names, sampling_rate, nperseg=None):
+#     """
+#     Perform spectral analysis using Welch's method and plot the results using Plotly.
+#     Args:
+#         data (pandas.DataFrame): DataFrame containing the signals.
+#         channel_names (list): List of channel names to analyze.
+#         sampling_rate (float): The sampling rate of the data.
+#         nperseg (int): Number of points in each segment for Welch's method.
+#     """
+#     fig = go.Figure()
+
+#     for i, channel in enumerate(channel_names):
+#         # Remove DC offset
+#         signal_no_dc = remove_dc_offset(data[channel])
+
+#         # Compute the Welch's power spectral density estimate
+#         freqs, psd = welch(signal_no_dc, fs=sampling_rate, window='hamming', nperseg=nperseg, scaling='density')
+
+#         # Plot the PSD
+#         fig.add_trace(go.Scatter(x=freqs, y=psd, mode='lines', name=channel))
+
+#     fig.update_layout(
+#         title='Power Spectral Density',
+#         xaxis_title='Frequency (Hz)',
+#         yaxis_title='PSD (Power/Frequency)',
+#         grid = {
+#             'rows':2,
+#             'columns':3,
+#             'pattern': "independent"
+#         }
+#     )
+
+#     fig.show()
 
 
 
@@ -90,7 +140,9 @@ def main():
     nperseg_welch = len(data) // 8
 
     # Perform spectral analysis using Welch's method
-    spectral_analysis_welch(data, args.channels, args.sampling_rate, nperseg=nperseg_welch)
+    spectral_analysis_plotly(data, args.channels, args.sampling_rate, nperseg=nperseg_welch)
+    # spectral_analysis_welch(data, args.channels, args.sampling_rate, nperseg=nperseg_welch)
+
 
 if __name__ == '__main__':
     main()

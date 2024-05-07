@@ -98,13 +98,14 @@ def collect_data(collection_duration):
     else:
         print("No data collected.")
 
-def perform_analysis():
+def perform_analysis(data = None):
     """
     Perform stiffness matrix analysis based on the collected data.
     """
     try:
         # Load the collected data from the CSV file
-        data = np.genfromtxt(data_file, delimiter=',', skip_header=1)
+        if data is None:
+            data = np.genfromtxt(data_file, delimiter=',', skip_header=1)
         
         if len(data) == 0:
             print("No data available for analysis. Please collect data first.")
@@ -127,6 +128,8 @@ def perform_analysis():
         # Save the stiffness matrix to a file
         np.savetxt("stiffness_matrix.txt", k, delimiter=',')
         print("Stiffness matrix saved to 'stiffness_matrix.txt'.")
+
+        return k
     except FileNotFoundError:
         print("Data file not found. Please collect data first.")
     except ValueError as ve:
@@ -237,7 +240,7 @@ def main():
                 print("Invalid input. Please enter numeric values.")
                 continue
         elif choice == "3":
-            perform_analysis()
+            k = perform_analysis()
             continue
         elif choice == "4":
             break
