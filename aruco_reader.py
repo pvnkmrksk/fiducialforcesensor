@@ -13,11 +13,12 @@ socket = context.socket(zmq.PUB)
 socket.bind("tcp://*:9872")
 
 # read in camera matrix and distortion coefficients
-with np.load('camera_calibration_results.npz') as X:
-    camMatrix, distCoeffs, _, _ = [X[i] for i in ('camera_matrix', 'dist_coeffs', 'rvecs', 'tvecs')]
+with np.load("camera_calibration_results.npz") as X:
+    camMatrix, distCoeffs, _, _ = [
+        X[i] for i in ("camera_matrix", "dist_coeffs", "rvecs", "tvecs")
+    ]
 
 # ... (keep the utility functions as is)
-
 
 
 def isRotationMatrix(R):
@@ -51,7 +52,15 @@ def rotationMatrixToEulerAngles(R):
 
 
 def initCamera(
-    camera=0, width=320, height=240, fps=100, exposure=150, gain=40, gamma=160, brightness=0, contrast=32
+    camera=0,
+    width=320,
+    height=240,
+    fps=100,
+    exposure=150,
+    gain=40,
+    gamma=160,
+    brightness=0,
+    contrast=32,
 ):
     # create display window
     cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
@@ -77,11 +86,10 @@ def initCamera(
     cap.set(cv2.CAP_PROP_GAIN, gain)
     cap.set(cv2.CAP_PROP_GAMMA, gamma)
 
-
-    #set brightness
+    # set brightness
     cap.set(cv2.CAP_PROP_BRIGHTNESS, brightness)
 
-    #set contrast
+    # set contrast
     cap.set(cv2.CAP_PROP_CONTRAST, contrast)
     return cap
 
@@ -113,6 +121,8 @@ def get_pose(img, gray, aruco_dict, aruco_params, tagSize):
         rots = [None, None, None]
 
     return rots, tvecs
+
+
 def read_get_pose(img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize):
     rots, tvecs = get_pose(img, gray, aruco_dict, aruco_params, tagSize)
 
@@ -126,7 +136,7 @@ def read_get_pose(img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSiz
     return rots, tvecs
 
 
-def get_baseline(cap, aruco_dict, aruco_params, tagSize,frames=10):
+def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10):
     rots = []
     tvecs = []
 
@@ -175,7 +185,7 @@ def send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=None):
         return
 
     # Send data even if some values are None
-    socket.send_json(data)
+    socket.send_json(data) 
 
 
 def med_filter(q, data, length=11, threshold=3):
@@ -218,8 +228,6 @@ def med_filter(q, data, length=11, threshold=3):
     return q, np.median(q[-length:], axis=0)
 
 
-
-
 def camera_io_thread(cap, frame_queue):
     while True:
         try:
@@ -227,7 +235,7 @@ def camera_io_thread(cap, frame_queue):
             frame_queue.put((img, gray))
         except Exception as e:
             print(e)
-            
+
 
 def main():
     cv2.setUseOptimized(True)
@@ -236,11 +244,45 @@ def main():
     tagSize = 0.01  # units in meters. tvecs Output is in meters
     # cap = initCamera(camera=0, width=640, height=480, fps=120, exposure=22, gain=12, gamma=72)
     # cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=22, gain=12, gamma=72)
-    cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=10, gain=10, gamma=72)
+    cap = initCamera(
+        camera=0,
+        width=1280,
+        height=960,
+        fps=120,
+        exposure=1,
+        gain=1,
+        gamma=72,
+        contrast=32,
+    )
+
+    # # Initialize the original dictionary
+    # original_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
+
+    # # Create a new dictionary with the same marker size
+    # marker_size = original_dict.markerSize
+    # aruco_dict = aruco.Dictionary_create(1, marker_size)
+
+    # # Copy the 64th marker to the new dictionary
+    # aruco_dict.bytesList = np.array([original_dict.bytesList[64].copy()])
+    # Initialize the original dictionary
+    # original_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
+
+    # # Create a new dictionary with the same marker size and number of bits
+    # marker_size = original_dict.markerSize
+    # num_bits = original_dict.maxCorrectionBits
+    # aruco_dict = aruco.custom_dictionary(1, marker_size, num_bits)
+
+    # # Copy the 64th marker to the new dictionary
+    # aruco_dict.bytesList = np.array([original_dict.bytesList[64].copy()])
 
     aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
     aruco_dict.bytesList = aruco_dict.bytesList[64]
+
     aruco_params = aruco.DetectorParameters_create()
+
+    aruco_params.adaptiveThreshWinSizeMin = 3
+    aruco_params.adaptiveThreshWinSizeMax = 23
+    aruco_params.adaptiveThreshWinSizeStep = 10
 
     rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=500)
 
@@ -252,7 +294,7 @@ def main():
     rots_q = np.zeros((length, 3))
     tvecs_q = np.zeros((length, 3))
 
-    time_header = datetime.datetime.now().strftime('%Y-%m-%d-%H-%M-%S')
+    time_header = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
     frame_queue = Queue(maxsize=1)
     camera_io = threading.Thread(target=camera_io_thread, args=(cap, frame_queue))
@@ -263,7 +305,9 @@ def main():
         frames += 1
         try:
             img, gray = frame_queue.get()
-            rots, tvecs = read_get_pose(img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize)
+            rots, tvecs = read_get_pose(
+                img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize
+            )
         except Exception as e:
             print(e)
             continue
@@ -279,6 +323,7 @@ def main():
 
     cv2.destroyAllWindows()
     cap.release()
+
 
 # ... (keep the profiling code as is)
 import cProfile
@@ -301,5 +346,3 @@ if __name__ == "__main__":
 #     profiler.disable()
 #     stats = pstats.Stats(profiler)
 #     stats.dump_stats('profile_results.prof')
-
-
