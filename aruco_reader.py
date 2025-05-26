@@ -6,11 +6,48 @@ import time
 import zmq
 import json
 import threading
+import argparse
 from queue import Queue
 
-context = zmq.Context()
-socket = context.socket(zmq.PUB)
-socket.bind("tcp://*:9872")
+# Set up argument parser
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description='ArUco marker detection and pose estimation',
+        epilog='''
+Examples:
+  python aruco_reader.py --tag-size 0.05 --camera 1 --width 640 --height 480
+  python aruco_reader.py --aruco-dict DICT_5X5_100 --port 5555
+'''
+    )
+    parser.add_argument('--tag-size', type=float, default=0.01, help='Size of the ArUco tag in meters (default: 0.01)')
+    parser.add_argument('--camera', type=int, default=0, help='Camera device ID (default: 0)')
+    parser.add_argument('--width', type=int, default=1280, help='Camera width resolution (default: 1280)')
+    parser.add_argument('--height', type=int, default=960, help='Camera height resolution (default: 960)')
+    parser.add_argument('--fps', type=int, default=120, help='Camera FPS (default: 120)')
+    parser.add_argument('--exposure', type=int, default=1, help='Camera exposure (default: 1)')
+    parser.add_argument('--gain', type=int, default=1, help='Camera gain (default: 1)')
+    parser.add_argument('--gamma', type=int, default=72, help='Camera gamma (default: 72)')
+    parser.add_argument('--brightness', type=int, default=0, help='Camera brightness (default: 0)')
+    parser.add_argument('--contrast', type=int, default=32, help='Camera contrast (default: 32)')
+    parser.add_argument('--aruco-dict', type=str, default='DICT_ARUCO_ORIGINAL', 
+                       choices=['DICT_4X4_50', 'DICT_4X4_100', 'DICT_4X4_250', 'DICT_4X4_1000',
+                               'DICT_5X5_50', 'DICT_5X5_100', 'DICT_5X5_250', 'DICT_5X5_1000',
+                               'DICT_6X6_50', 'DICT_6X6_100', 'DICT_6X6_250', 'DICT_6X6_1000',
+                               'DICT_7X7_50', 'DICT_7X7_100', 'DICT_7X7_250', 'DICT_7X7_1000',
+                               'DICT_ARUCO_ORIGINAL'],
+                       help='ArUco dictionary to use (default: DICT_ARUCO_ORIGINAL)')
+    parser.add_argument('--subset-id', type=int, default=64, help='ArUco marker subset ID for DICT_ARUCO_ORIGINAL (default: 64)')
+    parser.add_argument('--baseline-frames', type=int, default=500, help='Number of frames to use for baseline calculation (default: 500)')
+    parser.add_argument('--port', type=int, default=9872, help='ZMQ port for publishing pose data (default: 9872)')
+    
+    return parser.parse_args()
+
+# Initialize ZMQ context - move this to main to use the port from args
+def init_zmq(port):
+    context = zmq.Context()
+    socket = context.socket(zmq.PUB)
+    socket.bind(f"tcp://*:{port}")
+    return socket
 
 # read in camera matrix and distortion coefficients
 with np.load("camera_calibration_results.npz") as X:
@@ -78,9 +115,10 @@ def initCamera(
     # set fps
     cap.set(cv2.CAP_PROP_FPS, fps)
 
+    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+
     # set exposure
     cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
-    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
 
     # set gain and gamma
     cap.set(cv2.CAP_PROP_GAIN, gain)
@@ -136,7 +174,7 @@ def read_get_pose(img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSiz
     return rots, tvecs
 
 
-def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10):
+def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10, socket=None):
     rots = []
     tvecs = []
 
@@ -147,7 +185,7 @@ def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10):
         img, gray = read_image(cap)
 
         rots_i, tvecs_i = read_get_pose(
-            img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize=0.01
+            img, gray, aruco_dict, aruco_params, rots_bl, tvecs_bl, tagSize=tagSize
         )
 
         if rots_i[0] is not None and tvecs_i[0] is not None:
@@ -238,45 +276,69 @@ def camera_io_thread(cap, frame_queue):
 
 
 def main():
+    # Parse command line arguments
+    args = parse_args()
+    
+    # Print configuration
+    print("=== ArUco Reader Configuration ===")
+    print(f"Tag size: {args.tag_size}m")
+    print(f"Camera ID: {args.camera}")
+    print(f"Resolution: {args.width}x{args.height}")
+    print(f"ArUco dictionary: {args.aruco_dict}")
+    if args.aruco_dict == 'DICT_ARUCO_ORIGINAL':
+        print(f"Subset ID: {args.subset_id}")
+    print(f"Baseline frames: {args.baseline_frames}")
+    print(f"ZMQ port: {args.port}")
+    print("================================")
+    
+    # Initialize ZMQ socket
+    socket = init_zmq(args.port)
+    
     cv2.setUseOptimized(True)
     cv2.setNumThreads(8)  # Adjust the number of threads based on your GPU
 
-    tagSize = 0.01  # units in meters. tvecs Output is in meters
-    # cap = initCamera(camera=0, width=640, height=480, fps=120, exposure=22, gain=12, gamma=72)
-    # cap = initCamera(camera=0, width=1280, height=960, fps=120, exposure=22, gain=12, gamma=72)
+    tagSize = args.tag_size  # Get tag size from args
+    
+    # Initialize camera with parameters from args
     cap = initCamera(
-        camera=0,
-        width=1280,
-        height=960,
-        fps=120,
-        exposure=1,
-        gain=1,
-        gamma=72,
-        contrast=32,
+        camera=args.camera,
+        width=args.width,
+        height=args.height,
+        fps=args.fps,
+        exposure=args.exposure,
+        gain=args.gain,
+        gamma=args.gamma,
+        brightness=args.brightness,
+        contrast=args.contrast,
     )
 
-    # # Initialize the original dictionary
-    # original_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
-
-    # # Create a new dictionary with the same marker size
-    # marker_size = original_dict.markerSize
-    # aruco_dict = aruco.Dictionary_create(1, marker_size)
-
-    # # Copy the 64th marker to the new dictionary
-    # aruco_dict.bytesList = np.array([original_dict.bytesList[64].copy()])
-    # Initialize the original dictionary
-    # original_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
-
-    # # Create a new dictionary with the same marker size and number of bits
-    # marker_size = original_dict.markerSize
-    # num_bits = original_dict.maxCorrectionBits
-    # aruco_dict = aruco.custom_dictionary(1, marker_size, num_bits)
-
-    # # Copy the 64th marker to the new dictionary
-    # aruco_dict.bytesList = np.array([original_dict.bytesList[64].copy()])
-
-    aruco_dict = aruco.Dictionary_get(aruco.DICT_ARUCO_ORIGINAL)
-    aruco_dict.bytesList = aruco_dict.bytesList[64]
+    # Get the ArUco dictionary based on args
+    dict_mapping = {
+        'DICT_4X4_50': aruco.DICT_4X4_50,
+        'DICT_4X4_100': aruco.DICT_4X4_100,
+        'DICT_4X4_250': aruco.DICT_4X4_250,
+        'DICT_4X4_1000': aruco.DICT_4X4_1000,
+        'DICT_5X5_50': aruco.DICT_5X5_50,
+        'DICT_5X5_100': aruco.DICT_5X5_100,
+        'DICT_5X5_250': aruco.DICT_5X5_250,
+        'DICT_5X5_1000': aruco.DICT_5X5_1000,
+        'DICT_6X6_50': aruco.DICT_6X6_50,
+        'DICT_6X6_100': aruco.DICT_6X6_100,
+        'DICT_6X6_250': aruco.DICT_6X6_250,
+        'DICT_6X6_1000': aruco.DICT_6X6_1000,
+        'DICT_7X7_50': aruco.DICT_7X7_50,
+        'DICT_7X7_100': aruco.DICT_7X7_100,
+        'DICT_7X7_250': aruco.DICT_7X7_250,
+        'DICT_7X7_1000': aruco.DICT_7X7_1000,
+        'DICT_ARUCO_ORIGINAL': aruco.DICT_ARUCO_ORIGINAL
+    }
+    
+    dict_id = dict_mapping[args.aruco_dict]
+    aruco_dict = aruco.Dictionary_get(dict_id)
+    
+    # If using original dictionary and subset ID is specified
+    if args.aruco_dict == 'DICT_ARUCO_ORIGINAL':
+        aruco_dict.bytesList = aruco_dict.bytesList[args.subset_id]
 
     aruco_params = aruco.DetectorParameters_create()
 
@@ -284,7 +346,7 @@ def main():
     aruco_params.adaptiveThreshWinSizeMax = 23
     aruco_params.adaptiveThreshWinSizeStep = 10
 
-    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=500)
+    rots_bl, tvecs_bl = get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=args.baseline_frames, socket=socket)
 
     avg_fps, cur_fps, frames = 0, 0, 0
     prev_frame_time = time.time()
@@ -332,7 +394,6 @@ import pstats
 if __name__ == "__main__":
     try:
         main()
-
     except KeyboardInterrupt:
         pass
 # if __name__ == "__main__":
