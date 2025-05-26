@@ -32,13 +32,13 @@ Examples:
     parser.add_argument(
         "--width",
         type=int,
-        default=1280,
+        default=800,
         help="Camera width resolution (default: 1280)",
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=960,
+        default=600,
         help="Camera height resolution (default: 960)",
     )
     parser.add_argument(
@@ -103,7 +103,7 @@ Examples:
     parser.add_argument(
         "--min-pixel-size",
         type=int,
-        default=250,
+        default=50,
         help="Minimum marker side length in pixels (default: 100)",
     )
     parser.add_argument(
@@ -251,6 +251,28 @@ def get_pose(
         gray, aruco_dict, parameters=aruco_params
     )
 
+    # Always print detection info in debug mode
+    if debug:
+        if ids is not None:
+            print(f"\nDetected {len(ids)} markers with IDs: {ids.flatten()}")
+            for i, corner in enumerate(corners):
+                # Calculate marker side length in pixels
+                x_coords = corner[0][:, 0]
+                y_coords = corner[0][:, 1]
+                sides = []
+                for j in range(4):
+                    next_j = (j + 1) % 4
+                    side_length = np.sqrt(
+                        (x_coords[j] - x_coords[next_j]) ** 2
+                        + (y_coords[j] - y_coords[next_j]) ** 2
+                    )
+                    sides.append(side_length)
+                min_side = min(sides)
+                avg_side = sum(sides) / 4
+                print(f"Marker {ids[i][0]}: min_side={min_side:.1f}, avg_side={avg_side:.1f}")
+        if rejectedImgPoints is not None and len(rejectedImgPoints) > 0:
+            print(f"Rejected {len(rejectedImgPoints)} potential markers")
+
     if debug and rejectedImgPoints is not None and len(rejectedImgPoints) > 0:
         # Draw rejected markers in red
         aruco.drawDetectedMarkers(img, rejectedImgPoints, None, (0, 0, 255))
@@ -301,6 +323,12 @@ def get_pose(
         ]
 
         if debug:
+            print(f"\nFound {len(marker_info)} markers, {len(valid_markers)} within size limits")
+            if len(valid_markers) == 0 and len(marker_info) > 0:
+                print("Size limits: min={}, max={}".format(min_pixel_size, max_pixel_size))
+                for m in marker_info:
+                    print(f"Marker {m['id']}: min_side={m['min_side']:.1f}, avg_side={m['avg_side']:.1f}")
+
             # Draw size information for all detected markers
             for marker in marker_info:
                 center = marker["center"]
@@ -316,6 +344,8 @@ def get_pose(
                 )
 
         if not valid_markers:
+            if debug:
+                print("No markers within size limits")
             return [None, None, None], [None, None, None], None
 
         # If we have previous marker info, find the most similar marker
@@ -355,9 +385,12 @@ def get_pose(
                     rotMat, jacob = cv2.Rodrigues(rvec)
                     rots = rotationMatrixToEulerAngles(rotMat)
                     tvecs = tvecs[0][0]
+                    if debug:
+                        print(f"Successfully estimated pose for marker {selected_marker['id']}")
                     return rots, tvecs, selected_marker
         except Exception as e:
-            print(f"Error in pose estimation: {e}")
+            if debug:
+                print(f"Error in pose estimation: {e}")
 
     return [None, None, None], [None, None, None], None
 
@@ -436,6 +469,10 @@ def get_baseline(
     tvecs_bl = np.array([0, 0, 0])
     prev_marker_info = None
 
+    print("\nStarting baseline collection...")
+    print(f"Will collect {frames} frames")
+    print(f"Marker size limits: {min_pixel_size}-{max_pixel_size} pixels")
+
     for i in range(frames):
         img, gray = read_image(cap)
 
@@ -460,16 +497,25 @@ def get_baseline(
             rots.append(rots_i)
             tvecs.append(tvecs_i)
             prev_marker_info = marker_info
+            print(f"Frame {i+1}/{frames}: Marker detected")
+        else:
+            print(f"Frame {i+1}/{frames}: No valid marker detected")
 
         cv2.imshow("webcam", img)
         key = cv2.waitKey(1)
         send_pose(socket, rots_i, tvecs_i, 0, 0)
 
-    rots_bl = np.array(rots).mean(axis=0)
-    tvecs_bl = np.array(tvecs).mean(axis=0)
+    if len(rots) == 0:
+        print("\nWARNING: No valid markers detected during baseline collection!")
+        print("Using zero baseline. This may affect pose estimation accuracy.")
+        rots_bl = np.array([0, 0, 0])
+        tvecs_bl = np.array([0, 0, 0])
+    else:
+        print(f"\nSuccessfully collected {len(rots)} valid marker poses")
+        rots_bl = np.array(rots).mean(axis=0)
+        tvecs_bl = np.array(tvecs).mean(axis=0)
 
     send_pose(socket, rots_bl, tvecs_bl, 0, 0)
-
     return rots_bl, tvecs_bl
 
 
@@ -555,35 +601,37 @@ def get_dual_marker_pose(
     min_pixel_size=100,
     max_pixel_size=700,
     debug=False,
-    # Internal parameters for advanced users (not exposed in CLI)
-    _marker_separation_override=None,
-    _marker_angle_override=90.0,
 ):
     """
     Estimate pose using two markers positioned at 90 degrees to each other.
-    The dual markers provide more robust pitch and roll estimation.
-    
-    For adjacent perpendicular markers, the separation is calculated as:
-    marker_separation = tagSize * sqrt(2) (diagonal distance between centers)
-    
-    Args:
-        marker_id_1: ID of first marker (optional, uses any valid marker if None)
-        marker_id_2: ID of second marker (required for dual mode)
-        _marker_separation_override: Override calculated separation (for advanced use)
-        _marker_angle_override: Override marker angle (default 90°, for advanced use)
+    Simple approach: get pose from each marker independently and combine using weighted average.
     """
-    # Calculate marker separation for adjacent perpendicular markers
-    # For markers touching at corners, separation = tagSize * sqrt(2)
-    if _marker_separation_override is not None:
-        marker_separation = _marker_separation_override
-    else:
-        marker_separation = tagSize * np.sqrt(2)
-    
-    marker_angle = _marker_angle_override
-
     corners, ids, rejectedImgPoints = aruco.detectMarkers(
         gray, aruco_dict, parameters=aruco_params
     )
+
+    # Debug output
+    if debug:
+        if ids is not None:
+            print(f"\nDetected {len(ids)} markers with IDs: {ids.flatten()}")
+            for i, corner in enumerate(corners):
+                x_coords = corner[0][:, 0]
+                y_coords = corner[0][:, 1]
+                sides = []
+                for j in range(4):
+                    next_j = (j + 1) % 4
+                    side_length = np.sqrt(
+                        (x_coords[j] - x_coords[next_j]) ** 2
+                        + (y_coords[j] - y_coords[next_j]) ** 2
+                    )
+                    sides.append(side_length)
+                min_side = min(sides)
+                avg_side = sum(sides) / 4
+                print(f"Marker {ids[i][0]}: min_side={min_side:.1f}, avg_side={avg_side:.1f}")
+        else:
+            print("No markers detected")
+        if rejectedImgPoints is not None and len(rejectedImgPoints) > 0:
+            print(f"Rejected {len(rejectedImgPoints)} potential markers")
 
     if debug and rejectedImgPoints is not None and len(rejectedImgPoints) > 0:
         # Draw rejected markers in red
@@ -593,14 +641,13 @@ def get_dual_marker_pose(
         # Draw detected markers in green
         aruco.drawDetectedMarkers(img, corners, ids, (0, 255, 0))
 
-        # Calculate marker sizes and positions
+        # Process all detected markers
         marker_info = []
         for i, corner in enumerate(corners):
-            # Calculate marker side length in pixels
             x_coords = corner[0][:, 0]
             y_coords = corner[0][:, 1]
 
-            # Calculate all four sides
+            # Calculate marker size
             sides = []
             for j in range(4):
                 next_j = (j + 1) % 4
@@ -610,11 +657,8 @@ def get_dual_marker_pose(
                 )
                 sides.append(side_length)
 
-            # Use minimum side length for filtering
             min_side = min(sides)
             avg_side = sum(sides) / 4
-
-            # Calculate center position
             center_x = np.mean(x_coords)
             center_y = np.mean(y_coords)
 
@@ -629,16 +673,16 @@ def get_dual_marker_pose(
                 }
             )
 
-        # Filter markers by side length
+        # Filter by size
         valid_markers = [
             m for m in marker_info if min_pixel_size <= m["min_side"] <= max_pixel_size
         ]
 
         if debug:
-            # Draw size information for all detected markers
+            print(f"Found {len(marker_info)} markers, {len(valid_markers)} within size limits")
             for marker in marker_info:
                 center = marker["center"]
-                size_text = f"ID:{marker['id']} Min:{marker['min_side']:.1f} Avg:{marker['avg_side']:.1f}"
+                size_text = f"ID:{marker['id']} Min:{marker['min_side']:.1f}"
                 cv2.putText(
                     img,
                     size_text,
@@ -650,133 +694,209 @@ def get_dual_marker_pose(
                 )
 
         if not valid_markers:
+            if debug:
+                print("No valid markers found")
             return [None, None, None], [None, None, None], None
 
-        # Find markers by ID or select best candidates
+        # Find our target markers
         marker_1 = None
         marker_2 = None
         
-        # Look for specific marker IDs if provided
-        if marker_id_1 is not None:
-            marker_1 = next((m for m in valid_markers if m["id"] == marker_id_1), None)
-        if marker_id_2 is not None:
-            marker_2 = next((m for m in valid_markers if m["id"] == marker_id_2), None)
+        # When using custom dictionary, marker IDs become 0 and 1
+        # Map them back to original IDs for user clarity
+        id_map = {}
+        if marker_id_1 is not None and marker_id_2 is not None:
+            # In custom dictionary: 0 -> marker_id_1, 1 -> marker_id_2
+            id_map[0] = marker_id_1
+            id_map[1] = marker_id_2
         
-        # If specific IDs not found or not provided, select best candidates
-        if marker_1 is None and len(valid_markers) > 0:
-            # Use the marker with most consistent side lengths
-            marker_1 = min(
-                valid_markers,
-                key=lambda x: max(x["min_side"], x["avg_side"])
-                - min(x["min_side"], x["avg_side"]),
-            )
-        
-        if marker_2 is None and len(valid_markers) > 1:
-            # Find second marker that's different from first
-            remaining_markers = [m for m in valid_markers if m["id"] != (marker_1["id"] if marker_1 else -1)]
-            if remaining_markers:
-                marker_2 = min(
-                    remaining_markers,
-                    key=lambda x: max(x["min_side"], x["avg_side"])
-                    - min(x["min_side"], x["avg_side"]),
-                )
+        for marker in valid_markers:
+            actual_id = id_map.get(marker["id"], marker["id"])
+            
+            if marker_id_1 is not None and actual_id == marker_id_1:
+                marker_1 = marker.copy()
+                marker_1["actual_id"] = marker_id_1
+            elif marker_id_2 is not None and actual_id == marker_id_2:
+                marker_2 = marker.copy()
+                marker_2["actual_id"] = marker_id_2
+            elif marker_id_1 is None or marker_id_2 is None:
+                # Auto-select if IDs not specified
+                if marker_1 is None:
+                    marker_1 = marker.copy()
+                    marker_1["actual_id"] = actual_id
+                elif marker_2 is None:
+                    marker_2 = marker.copy()
+                    marker_2["actual_id"] = actual_id
 
-        # If we have both markers, estimate poses and combine
+        if debug:
+            if marker_1:
+                print(f"Found marker 1: ID {marker_1.get('actual_id', marker_1['id'])}")
+            if marker_2:
+                print(f"Found marker 2: ID {marker_2.get('actual_id', marker_2['id'])}")
+
+        # Try dual marker estimation if we have both
         if marker_1 is not None and marker_2 is not None:
             try:
-                # Estimate pose for marker 1
-                marker_1_corners = np.array([marker_1["corners"]])
+                # Get pose from marker 1
+                corners_1 = np.array([marker_1["corners"]])
                 (rvecs_1, tvecs_1, _) = aruco.estimatePoseSingleMarkers(
-                    marker_1_corners, tagSize, camMatrix, distCoeffs
+                    corners_1, tagSize, camMatrix, distCoeffs
                 )
                 
-                # Estimate pose for marker 2
-                marker_2_corners = np.array([marker_2["corners"]])
+                # Get pose from marker 2
+                corners_2 = np.array([marker_2["corners"]])
                 (rvecs_2, tvecs_2, _) = aruco.estimatePoseSingleMarkers(
-                    marker_2_corners, tagSize, camMatrix, distCoeffs
+                    corners_2, tagSize, camMatrix, distCoeffs
                 )
 
                 if (rvecs_1 is not None and len(rvecs_1) > 0 and 
                     rvecs_2 is not None and len(rvecs_2) > 0):
                     
-                    # Convert rotation vectors to rotation matrices
+                    # Convert to rotation matrices and Euler angles
                     rvec_1 = rvecs_1[0][0]
                     rvec_2 = rvecs_2[0][0]
                     
-                    if (rvec_1.shape == (3,) or rvec_1.shape == (3, 1)) and \
-                       (rvec_2.shape == (3,) or rvec_2.shape == (3, 1)):
+                    rotMat_1, _ = cv2.Rodrigues(rvec_1)
+                    rotMat_2, _ = cv2.Rodrigues(rvec_2)
+                    
+                    rots_1 = rotationMatrixToEulerAngles(rotMat_1)
+                    rots_2 = rotationMatrixToEulerAngles(rotMat_2)
+                    
+                    tvec_1 = tvecs_1[0][0]
+                    tvec_2 = tvecs_2[0][0]
+                    
+                    # Calculate weights based on marker size (larger = more reliable)
+                    size_1 = marker_1["avg_side"]
+                    size_2 = marker_2["avg_side"]
+                    total_size = size_1 + size_2
+                    
+                    weight_1 = size_1 / total_size
+                    weight_2 = size_2 / total_size
+                    
+                    # Use the known marker size to validate and improve Z estimation
+                    # Each marker should appear at a size consistent with its distance
+                    # Larger markers in pixels should be closer (smaller Z)
+                    
+                    # Calculate expected Z based on marker pixel size and known physical size
+                    # Using simple pinhole camera model: pixel_size = (focal_length * real_size) / distance
+                    # Rearranging: distance = (focal_length * real_size) / pixel_size
+                    
+                    # Get camera focal length from camera matrix
+                    focal_length_x = camMatrix[0, 0]
+                    focal_length_y = camMatrix[1, 1]
+                    focal_length = (focal_length_x + focal_length_y) / 2  # Average focal length
+                    
+                    # Calculate expected Z distance for each marker based on its pixel size
+                    # Convert tag size from meters to millimeters for calculation
+                    tag_size_mm = tagSize * 1000
+                    
+                    # Estimate Z from pixel size (this gives us a scale reference)
+                    z_from_size_1 = (focal_length * tag_size_mm) / size_1
+                    z_from_size_2 = (focal_length * tag_size_mm) / size_2
+                    
+                    # Use the size-based Z estimates to validate the pose estimation
+                    # If the pose-estimated Z is very different from size-based Z, trust the size more
+                    z_pose_1 = tvec_1[2] * 1000  # Convert to mm for comparison
+                    z_pose_2 = tvec_2[2] * 1000
+                    
+                    # Calculate correction factors
+                    z_correction_1 = z_from_size_1 / z_pose_1 if z_pose_1 != 0 else 1.0
+                    z_correction_2 = z_from_size_2 / z_pose_2 if z_pose_2 != 0 else 1.0
+                    
+                    # Apply moderate correction to Z (don't completely override pose estimation)
+                    # Blend between pose estimate and size estimate
+                    blend_factor = 0.3  # How much to trust size-based estimate vs pose estimate
+                    
+                    corrected_z_1 = tvec_1[2] * (1 - blend_factor) + (z_from_size_1 / 1000) * blend_factor
+                    corrected_z_2 = tvec_2[2] * (1 - blend_factor) + (z_from_size_2 / 1000) * blend_factor
+                    
+                    # Create corrected translation vectors
+                    corrected_tvec_1 = tvec_1.copy()
+                    corrected_tvec_2 = tvec_2.copy()
+                    corrected_tvec_1[2] = corrected_z_1
+                    corrected_tvec_2[2] = corrected_z_2
+                    
+                    # Weighted average of corrected positions
+                    combined_tvec = weight_1 * corrected_tvec_1 + weight_2 * corrected_tvec_2
+                    
+                    if debug:
+                        print(f"Marker sizes (pixels): {size_1:.1f}, {size_2:.1f}")
+                        print(f"Z from pose (mm): {z_pose_1:.1f}, {z_pose_2:.1f}")
+                        print(f"Z from size (mm): {z_from_size_1:.1f}, {z_from_size_2:.1f}")
+                        print(f"Z corrections: {z_correction_1:.3f}, {z_correction_2:.3f}")
+                        print(f"Original Z (m): {tvec_1[2]:.4f}, {tvec_2[2]:.4f}")
+                        print(f"Corrected Z (m): {corrected_z_1:.4f}, {corrected_z_2:.4f}")
+                        print(f"Final Z (m): {combined_tvec[2]:.4f}")
+                    
+                    # Weighted average of orientations
+                    # Handle angle wrapping for proper averaging
+                    combined_rots = np.zeros(3)
+                    for i in range(3):
+                        angle_1 = np.radians(rots_1[i])
+                        angle_2 = np.radians(rots_2[i])
                         
-                        rotMat_1, _ = cv2.Rodrigues(rvec_1)
-                        rotMat_2, _ = cv2.Rodrigues(rvec_2)
+                        # Convert to complex numbers for proper circular averaging
+                        c1 = np.exp(1j * angle_1)
+                        c2 = np.exp(1j * angle_2)
                         
-                        rots_1 = rotationMatrixToEulerAngles(rotMat_1)
-                        rots_2 = rotationMatrixToEulerAngles(rotMat_2)
+                        # Weighted average in complex plane
+                        avg_complex = weight_1 * c1 + weight_2 * c2
                         
-                        tvec_1 = tvecs_1[0][0]
-                        tvec_2 = tvecs_2[0][0]
+                        # Convert back to angle
+                        avg_angle = np.angle(avg_complex)
+                        combined_rots[i] = np.degrees(avg_angle)
+                    
+                    # Create combined marker info
+                    combined_marker_info = {
+                        "marker_1": marker_1,
+                        "marker_2": marker_2,
+                        "combined": True,
+                        "weight_1": weight_1,
+                        "weight_2": weight_2,
+                        "z_correction_1": z_correction_1,
+                        "z_correction_2": z_correction_2,
+                        "blend_factor": blend_factor,
+                    }
+                    
+                    if debug:
+                        print(f"Marker 1 pose: pos={tvec_1}, rot={rots_1}")
+                        print(f"Marker 2 pose: pos={tvec_2}, rot={rots_2}")
+                        print(f"Combined pose: pos={combined_tvec}, rot={combined_rots}")
+                        print(f"Weights: {weight_1:.2f}, {weight_2:.2f}")
                         
-                        # Combine poses for more robust estimation
-                        # Weight based on marker quality/size
-                        weight_1 = marker_1["avg_side"] / (marker_1["avg_side"] + marker_2["avg_side"])
-                        weight_2 = 1.0 - weight_1
-                        
-                        # For translation, use weighted average
-                        combined_tvec = weight_1 * tvec_1 + weight_2 * tvec_2
-                        
-                        # For rotation, use the marker with better orientation estimate
-                        # In dual marker setup, use marker 1 for yaw, combined for pitch/roll
-                        combined_rots = np.array([
-                            weight_1 * rots_1[0] + weight_2 * rots_2[0],  # roll
-                            weight_1 * rots_1[1] + weight_2 * rots_2[1],  # pitch  
-                            rots_1[2]  # yaw - primarily from marker 1
-                        ])
-                        
-                        # Create combined marker info
-                        combined_marker_info = {
-                            "marker_1": marker_1,
-                            "marker_2": marker_2,
-                            "combined": True,
-                            "weight_1": weight_1,
-                            "weight_2": weight_2
-                        }
-                        
-                        if debug:
-                            # Draw connection line between markers
-                            cv2.line(img, 
-                                   (int(marker_1["center"][0]), int(marker_1["center"][1])),
-                                   (int(marker_2["center"][0]), int(marker_2["center"][1])),
-                                   (255, 0, 255), 2)
-                            
-                            # Draw weight information
-                            cv2.putText(img, f"W1:{weight_1:.2f}", 
-                                      (int(marker_1["center"][0]), int(marker_1["center"][1]) - 20),
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-                            cv2.putText(img, f"W2:{weight_2:.2f}", 
-                                      (int(marker_2["center"][0]), int(marker_2["center"][1]) - 20),
-                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
-                        
-                        return combined_rots, combined_tvec, combined_marker_info
-                        
+                        # Draw connection line
+                        cv2.line(img, 
+                               (int(marker_1["center"][0]), int(marker_1["center"][1])),
+                               (int(marker_2["center"][0]), int(marker_2["center"][1])),
+                               (255, 0, 255), 2)
+                    
+                    return combined_rots, combined_tvec, combined_marker_info
+                    
             except Exception as e:
-                print(f"Error in dual marker pose estimation: {e}")
+                if debug:
+                    print(f"Error in dual marker estimation: {e}")
         
-        # Fall back to single marker if dual marker fails
-        elif marker_1 is not None:
+        # Fall back to single marker
+        best_marker = marker_1 if marker_1 is not None else marker_2
+        if best_marker is not None:
+            if debug:
+                print(f"Using single marker: ID {best_marker.get('actual_id', best_marker['id'])}")
             try:
-                marker_corners = np.array([marker_1["corners"]])
-                (rvecs, tvecs, objpts) = aruco.estimatePoseSingleMarkers(
-                    marker_corners, tagSize, camMatrix, distCoeffs
+                corners = np.array([best_marker["corners"]])
+                (rvecs, tvecs, _) = aruco.estimatePoseSingleMarkers(
+                    corners, tagSize, camMatrix, distCoeffs
                 )
 
                 if rvecs is not None and len(rvecs) > 0:
                     rvec = rvecs[0][0]
-                    if rvec.shape == (3,) or rvec.shape == (3, 1):
-                        rotMat, jacob = cv2.Rodrigues(rvec)
-                        rots = rotationMatrixToEulerAngles(rotMat)
-                        tvecs = tvecs[0][0]
-                        return rots, tvecs, marker_1
+                    rotMat, _ = cv2.Rodrigues(rvec)
+                    rots = rotationMatrixToEulerAngles(rotMat)
+                    tvec = tvecs[0][0]
+                    return rots, tvec, best_marker
+                    
             except Exception as e:
-                print(f"Error in single marker pose estimation: {e}")
+                if debug:
+                    print(f"Error in single marker estimation: {e}")
 
     return [None, None, None], [None, None, None], None
 
@@ -867,19 +987,54 @@ def main():
     aruco_dict = aruco.Dictionary_get(dict_id)
 
     # Apply subset ID if specified, regardless of dictionary type
-    if args.subset_id is not None:
+    if args.dual_marker and args.marker_id_1 is not None and args.marker_id_2 is not None:
         try:
-            aruco_dict.bytesList = aruco_dict.bytesList[args.subset_id]
-            print(f"Applied subset ID {args.subset_id} to dictionary")
+            # For DICT_ARUCO_ORIGINAL, we need to handle the subset differently
+            if args.aruco_dict == "DICT_ARUCO_ORIGINAL":
+                # Create a new dictionary with just the markers we want
+                new_dict = aruco.Dictionary_create(2, 5)  # 2 markers, 5x5 bits
+                # Copy the bytes for the specified markers
+                new_dict.bytesList = np.array([
+                    aruco_dict.bytesList[args.marker_id_1],
+                    aruco_dict.bytesList[args.marker_id_2]
+                ])
+                aruco_dict = new_dict
+                print(f"Created custom dictionary with markers {args.marker_id_1} and {args.marker_id_2}")
+            else:
+                # For other dictionaries, create a subset with just our markers
+                new_dict = aruco.Dictionary_create(2, 5)  # 2 markers, 5x5 bits
+                new_dict.bytesList = np.array([
+                    aruco_dict.bytesList[args.marker_id_1],
+                    aruco_dict.bytesList[args.marker_id_2]
+                ])
+                aruco_dict = new_dict
+                print(f"Created custom dictionary with markers {args.marker_id_1} and {args.marker_id_2}")
         except Exception as e:
-            print(f"Warning: Could not apply subset ID {args.subset_id}: {e}")
+            print(f"Warning: Could not create custom dictionary: {e}")
             print("Continuing with full dictionary...")
 
     aruco_params = aruco.DetectorParameters_create()
-
+    # Adjust detection parameters for better marker detection
     aruco_params.adaptiveThreshWinSizeMin = 3
     aruco_params.adaptiveThreshWinSizeMax = 23
     aruco_params.adaptiveThreshWinSizeStep = 10
+    aruco_params.adaptiveThreshConstant = 7
+    aruco_params.minMarkerPerimeterRate = 0.03
+    aruco_params.maxMarkerPerimeterRate = 4.0
+    aruco_params.polygonalApproxAccuracyRate = 0.03
+    aruco_params.minCornerDistanceRate = 0.05
+    aruco_params.minDistanceToBorder = 3
+    aruco_params.minMarkerDistanceRate = 0.05
+    aruco_params.cornerRefinementMethod = aruco.CORNER_REFINE_SUBPIX
+    aruco_params.cornerRefinementWinSize = 5
+    aruco_params.cornerRefinementMaxIterations = 30
+    aruco_params.cornerRefinementMinAccuracy = 0.1
+    aruco_params.markerBorderBits = 1
+    aruco_params.perspectiveRemovePixelPerCell = 4
+    aruco_params.perspectiveRemoveIgnoredMarginPerCell = 0.13
+    aruco_params.maxErroneousBitsInBorderRate = 0.35
+    aruco_params.minOtsuStdDev = 5.0
+    aruco_params.errorCorrectionRate = 0.6
 
     rots_bl, tvecs_bl = get_baseline(
         cap,
