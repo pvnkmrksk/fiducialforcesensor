@@ -117,6 +117,23 @@ Examples:
         action="store_true",
         help="Enable debug visualization of rejected markers",
     )
+    parser.add_argument(
+        "--dual-marker",
+        action="store_true",
+        help="Enable dual marker mode for more robust pose estimation",
+    )
+    parser.add_argument(
+        "--marker-id-1",
+        type=int,
+        default=None,
+        help="Specific ID for first marker (optional, uses any valid marker if not specified)",
+    )
+    parser.add_argument(
+        "--marker-id-2",
+        type=int,
+        default=None,
+        help="Specific ID for second marker (required for dual marker mode)",
+    )
 
     return parser.parse_args()
 
@@ -353,22 +370,40 @@ def read_get_pose(
     rots_bl,
     tvecs_bl,
     tagSize,
+    dual_marker=False,
+    marker_id_1=None,
+    marker_id_2=None,
     prev_marker_info=None,
     min_pixel_size=100,
     max_pixel_size=700,
     debug=False,
 ):
-    rots, tvecs, marker_info = get_pose(
-        img,
-        gray,
-        aruco_dict,
-        aruco_params,
-        tagSize,
-        prev_marker_info,
-        min_pixel_size,
-        max_pixel_size,
-        debug,
-    )
+    if dual_marker:
+        rots, tvecs, marker_info = get_dual_marker_pose(
+            img,
+            gray,
+            aruco_dict,
+            aruco_params,
+            tagSize,
+            marker_id_1,
+            marker_id_2,
+            prev_marker_info,
+            min_pixel_size,
+            max_pixel_size,
+            debug,
+        )
+    else:
+        rots, tvecs, marker_info = get_pose(
+            img,
+            gray,
+            aruco_dict,
+            aruco_params,
+            tagSize,
+            prev_marker_info,
+            min_pixel_size,
+            max_pixel_size,
+            debug,
+        )
 
     if rots[0] is not None and tvecs[0] is not None:
         rots = rots - rots_bl
@@ -380,7 +415,20 @@ def read_get_pose(
     return rots, tvecs, marker_info
 
 
-def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10, socket=None):
+def get_baseline(
+    cap, 
+    aruco_dict, 
+    aruco_params, 
+    tagSize, 
+    frames=10, 
+    socket=None,
+    dual_marker=False,
+    marker_id_1=None,
+    marker_id_2=None,
+    min_pixel_size=100,
+    max_pixel_size=700,
+    debug=False,
+):
     rots = []
     tvecs = []
 
@@ -399,7 +447,13 @@ def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10, socket=None)
             rots_bl,
             tvecs_bl,
             tagSize,
+            dual_marker,
+            marker_id_1,
+            marker_id_2,
             prev_marker_info,
+            min_pixel_size,
+            max_pixel_size,
+            debug,
         )
 
         if rots_i[0] is not None and tvecs_i[0] is not None:
@@ -489,6 +543,244 @@ def camera_io_thread(cap, frame_queue):
             print(e)
 
 
+def get_dual_marker_pose(
+    img,
+    gray,
+    aruco_dict,
+    aruco_params,
+    tagSize,
+    marker_id_1=None,
+    marker_id_2=None,
+    prev_marker_info=None,
+    min_pixel_size=100,
+    max_pixel_size=700,
+    debug=False,
+    # Internal parameters for advanced users (not exposed in CLI)
+    _marker_separation_override=None,
+    _marker_angle_override=90.0,
+):
+    """
+    Estimate pose using two markers positioned at 90 degrees to each other.
+    The dual markers provide more robust pitch and roll estimation.
+    
+    For adjacent perpendicular markers, the separation is calculated as:
+    marker_separation = tagSize * sqrt(2) (diagonal distance between centers)
+    
+    Args:
+        marker_id_1: ID of first marker (optional, uses any valid marker if None)
+        marker_id_2: ID of second marker (required for dual mode)
+        _marker_separation_override: Override calculated separation (for advanced use)
+        _marker_angle_override: Override marker angle (default 90°, for advanced use)
+    """
+    # Calculate marker separation for adjacent perpendicular markers
+    # For markers touching at corners, separation = tagSize * sqrt(2)
+    if _marker_separation_override is not None:
+        marker_separation = _marker_separation_override
+    else:
+        marker_separation = tagSize * np.sqrt(2)
+    
+    marker_angle = _marker_angle_override
+
+    corners, ids, rejectedImgPoints = aruco.detectMarkers(
+        gray, aruco_dict, parameters=aruco_params
+    )
+
+    if debug and rejectedImgPoints is not None and len(rejectedImgPoints) > 0:
+        # Draw rejected markers in red
+        aruco.drawDetectedMarkers(img, rejectedImgPoints, None, (0, 0, 255))
+
+    if ids is not None:
+        # Draw detected markers in green
+        aruco.drawDetectedMarkers(img, corners, ids, (0, 255, 0))
+
+        # Calculate marker sizes and positions
+        marker_info = []
+        for i, corner in enumerate(corners):
+            # Calculate marker side length in pixels
+            x_coords = corner[0][:, 0]
+            y_coords = corner[0][:, 1]
+
+            # Calculate all four sides
+            sides = []
+            for j in range(4):
+                next_j = (j + 1) % 4
+                side_length = np.sqrt(
+                    (x_coords[j] - x_coords[next_j]) ** 2
+                    + (y_coords[j] - y_coords[next_j]) ** 2
+                )
+                sides.append(side_length)
+
+            # Use minimum side length for filtering
+            min_side = min(sides)
+            avg_side = sum(sides) / 4
+
+            # Calculate center position
+            center_x = np.mean(x_coords)
+            center_y = np.mean(y_coords)
+
+            marker_info.append(
+                {
+                    "id": ids[i][0],
+                    "min_side": min_side,
+                    "avg_side": avg_side,
+                    "center": (center_x, center_y),
+                    "corners": corner[0],
+                    "index": i,
+                }
+            )
+
+        # Filter markers by side length
+        valid_markers = [
+            m for m in marker_info if min_pixel_size <= m["min_side"] <= max_pixel_size
+        ]
+
+        if debug:
+            # Draw size information for all detected markers
+            for marker in marker_info:
+                center = marker["center"]
+                size_text = f"ID:{marker['id']} Min:{marker['min_side']:.1f} Avg:{marker['avg_side']:.1f}"
+                cv2.putText(
+                    img,
+                    size_text,
+                    (int(center[0]), int(center[1])),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 255, 255),
+                    1,
+                )
+
+        if not valid_markers:
+            return [None, None, None], [None, None, None], None
+
+        # Find markers by ID or select best candidates
+        marker_1 = None
+        marker_2 = None
+        
+        # Look for specific marker IDs if provided
+        if marker_id_1 is not None:
+            marker_1 = next((m for m in valid_markers if m["id"] == marker_id_1), None)
+        if marker_id_2 is not None:
+            marker_2 = next((m for m in valid_markers if m["id"] == marker_id_2), None)
+        
+        # If specific IDs not found or not provided, select best candidates
+        if marker_1 is None and len(valid_markers) > 0:
+            # Use the marker with most consistent side lengths
+            marker_1 = min(
+                valid_markers,
+                key=lambda x: max(x["min_side"], x["avg_side"])
+                - min(x["min_side"], x["avg_side"]),
+            )
+        
+        if marker_2 is None and len(valid_markers) > 1:
+            # Find second marker that's different from first
+            remaining_markers = [m for m in valid_markers if m["id"] != (marker_1["id"] if marker_1 else -1)]
+            if remaining_markers:
+                marker_2 = min(
+                    remaining_markers,
+                    key=lambda x: max(x["min_side"], x["avg_side"])
+                    - min(x["min_side"], x["avg_side"]),
+                )
+
+        # If we have both markers, estimate poses and combine
+        if marker_1 is not None and marker_2 is not None:
+            try:
+                # Estimate pose for marker 1
+                marker_1_corners = np.array([marker_1["corners"]])
+                (rvecs_1, tvecs_1, _) = aruco.estimatePoseSingleMarkers(
+                    marker_1_corners, tagSize, camMatrix, distCoeffs
+                )
+                
+                # Estimate pose for marker 2
+                marker_2_corners = np.array([marker_2["corners"]])
+                (rvecs_2, tvecs_2, _) = aruco.estimatePoseSingleMarkers(
+                    marker_2_corners, tagSize, camMatrix, distCoeffs
+                )
+
+                if (rvecs_1 is not None and len(rvecs_1) > 0 and 
+                    rvecs_2 is not None and len(rvecs_2) > 0):
+                    
+                    # Convert rotation vectors to rotation matrices
+                    rvec_1 = rvecs_1[0][0]
+                    rvec_2 = rvecs_2[0][0]
+                    
+                    if (rvec_1.shape == (3,) or rvec_1.shape == (3, 1)) and \
+                       (rvec_2.shape == (3,) or rvec_2.shape == (3, 1)):
+                        
+                        rotMat_1, _ = cv2.Rodrigues(rvec_1)
+                        rotMat_2, _ = cv2.Rodrigues(rvec_2)
+                        
+                        rots_1 = rotationMatrixToEulerAngles(rotMat_1)
+                        rots_2 = rotationMatrixToEulerAngles(rotMat_2)
+                        
+                        tvec_1 = tvecs_1[0][0]
+                        tvec_2 = tvecs_2[0][0]
+                        
+                        # Combine poses for more robust estimation
+                        # Weight based on marker quality/size
+                        weight_1 = marker_1["avg_side"] / (marker_1["avg_side"] + marker_2["avg_side"])
+                        weight_2 = 1.0 - weight_1
+                        
+                        # For translation, use weighted average
+                        combined_tvec = weight_1 * tvec_1 + weight_2 * tvec_2
+                        
+                        # For rotation, use the marker with better orientation estimate
+                        # In dual marker setup, use marker 1 for yaw, combined for pitch/roll
+                        combined_rots = np.array([
+                            weight_1 * rots_1[0] + weight_2 * rots_2[0],  # roll
+                            weight_1 * rots_1[1] + weight_2 * rots_2[1],  # pitch  
+                            rots_1[2]  # yaw - primarily from marker 1
+                        ])
+                        
+                        # Create combined marker info
+                        combined_marker_info = {
+                            "marker_1": marker_1,
+                            "marker_2": marker_2,
+                            "combined": True,
+                            "weight_1": weight_1,
+                            "weight_2": weight_2
+                        }
+                        
+                        if debug:
+                            # Draw connection line between markers
+                            cv2.line(img, 
+                                   (int(marker_1["center"][0]), int(marker_1["center"][1])),
+                                   (int(marker_2["center"][0]), int(marker_2["center"][1])),
+                                   (255, 0, 255), 2)
+                            
+                            # Draw weight information
+                            cv2.putText(img, f"W1:{weight_1:.2f}", 
+                                      (int(marker_1["center"][0]), int(marker_1["center"][1]) - 20),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+                            cv2.putText(img, f"W2:{weight_2:.2f}", 
+                                      (int(marker_2["center"][0]), int(marker_2["center"][1]) - 20),
+                                      cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+                        
+                        return combined_rots, combined_tvec, combined_marker_info
+                        
+            except Exception as e:
+                print(f"Error in dual marker pose estimation: {e}")
+        
+        # Fall back to single marker if dual marker fails
+        elif marker_1 is not None:
+            try:
+                marker_corners = np.array([marker_1["corners"]])
+                (rvecs, tvecs, objpts) = aruco.estimatePoseSingleMarkers(
+                    marker_corners, tagSize, camMatrix, distCoeffs
+                )
+
+                if rvecs is not None and len(rvecs) > 0:
+                    rvec = rvecs[0][0]
+                    if rvec.shape == (3,) or rvec.shape == (3, 1):
+                        rotMat, jacob = cv2.Rodrigues(rvec)
+                        rots = rotationMatrixToEulerAngles(rotMat)
+                        tvecs = tvecs[0][0]
+                        return rots, tvecs, marker_1
+            except Exception as e:
+                print(f"Error in single marker pose estimation: {e}")
+
+    return [None, None, None], [None, None, None], None
+
+
 def main():
     # Parse command line arguments
     args = parse_args()
@@ -505,6 +797,16 @@ def main():
     print(f"Debug mode: {'Enabled' if args.debug else 'Disabled'}")
     print(f"Baseline frames: {args.baseline_frames}")
     print(f"ZMQ port: {args.port}")
+    
+    # Dual marker configuration
+    print(f"Dual marker mode: {'Enabled' if args.dual_marker else 'Disabled'}")
+    if args.dual_marker:
+        print(f"Marker ID 1: {args.marker_id_1 if args.marker_id_1 is not None else 'Auto-detect'}")
+        print(f"Marker ID 2: {args.marker_id_2 if args.marker_id_2 is not None else 'Auto-detect'}")
+        # Calculate and display the separation for adjacent perpendicular markers
+        calculated_separation = args.tag_size * np.sqrt(2)
+        print(f"Calculated marker separation: {calculated_separation:.4f}m (adjacent perpendicular)")
+    
     print("================================")
 
     # Initialize ZMQ socket
@@ -586,6 +888,12 @@ def main():
         tagSize,
         frames=args.baseline_frames,
         socket=socket,
+        dual_marker=args.dual_marker,
+        marker_id_1=args.marker_id_1,
+        marker_id_2=args.marker_id_2,
+        min_pixel_size=args.min_pixel_size,
+        max_pixel_size=args.max_pixel_size,
+        debug=args.debug,
     )
 
     avg_fps, cur_fps, frames = 0, 0, 0
@@ -616,6 +924,9 @@ def main():
                 rots_bl,
                 tvecs_bl,
                 tagSize,
+                args.dual_marker,
+                args.marker_id_1,
+                args.marker_id_2,
                 prev_marker_info,
                 args.min_pixel_size,
                 args.max_pixel_size,
