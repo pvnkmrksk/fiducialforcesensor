@@ -489,7 +489,34 @@ def camera_io_thread(cap, frame_queue):
             print(e)
 
 
+def compute_tip_wrench(q_p, K, r, L):
+    """
+    Calculate the 6D wrench at the rod end from the platform pose.
+    q_p: [x_p, y_p, z_p, phi_x, phi_y, phi_z]
+    K: Spring constant (float)
+    r: Platform radius (float)
+    L: Lever length (float)
+    Return: w_t = [F_x, F_y, F_z, M_x, M_y, M_z]
+    """
+    x_p, y_p, z_p, phi_x, phi_y, phi_z = q_p
+    F_x = 4 * K * x_p
+    F_y = 4 * K * y_p
+    F_z = 4 * K * z_p
+    M_x = 4 * K * r**2 * phi_x + 4 * K * L * y_p
+    M_y = 4 * K * r**2 * phi_y - 4 * K * L * x_p
+    M_z = 8 * K * r**2 * phi_z
+    return np.array([F_x, F_y, F_z, M_x, M_y, M_z])
+
+
 def main():
+    # =======================
+    # Spring paramters
+    print("Please enter parameters:")
+    K = float(input("Springconstant K [N/m]: "))
+    r = float(input("Plattform radius r [m]: "))
+    L = float(input("Lever length L [m]: "))
+    # =======================
+
     # Parse command line arguments
     args = parse_args()
 
@@ -627,6 +654,22 @@ def main():
             print(e)
             continue
 
+        # --- Plattformpose zu 6D-Wrench ---
+        # Pose: [x_p, y_p, z_p, phi_x, phi_y, phi_z]
+        # rots: [roll, pitch, yaw] in Grad, tvecs: [x, y, z] in Meter
+        # Umwandlung in Bogenmaß für phi_x, phi_y, phi_z
+        q_p = [
+            tvecs[0] if tvecs[0] is not None else 0.0,
+            tvecs[1] if tvecs[1] is not None else 0.0,
+            tvecs[2] if tvecs[2] is not None else 0.0,
+            np.deg2rad(rots[0]) if rots[0] is not None else 0.0,
+            np.deg2rad(rots[1]) if rots[1] is not None else 0.0,
+            np.deg2rad(rots[2]) if rots[2] is not None else 0.0,
+        ]
+        tip_wrench = compute_tip_wrench(q_p, K, r, L)
+        print(f"Tip-Wrench [Fx, Fy, Fz, Mx, My, Mz]: {tip_wrench}")
+
+        # ...bestehender Code...
         raw = rots.copy()
         send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=raw)
 
