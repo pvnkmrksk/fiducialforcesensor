@@ -117,6 +117,57 @@ This will start the main detection loop with the following defaults:
 #### Output
 The system will detect ArUco markers and publish pose data (x, y, z, roll, pitch, yaw) via ZMQ on the specified port.
 
+## Visualization with PlotJuggler
+
+For real-time visualization of the pose data, we recommend using [PlotJuggler](https://github.com/facontidavide/PlotJuggler), a powerful time series visualization tool.
+
+### Install PlotJuggler
+
+**Ubuntu (with ROS support):**
+```bash
+sudo snap install plotjuggler
+```
+
+**Windows:**
+Download the installer from [PlotJuggler releases](https://github.com/facontidavide/PlotJuggler/releases)
+
+**From source:**
+```bash
+git clone https://github.com/facontidavide/PlotJuggler.git
+cd PlotJuggler
+mkdir build && cd build
+cmake ..
+make -j$(nproc)
+```
+
+### Connect to ZMQ Data Stream
+
+1. Launch PlotJuggler
+2. Go to **Data Sources** → **Add DataStreamer** → **ZeroMQ**
+3. Configure the connection:
+   - **URL**: `tcp://localhost:9872` (or your custom port)
+   - **Topic**: Leave empty (receives all topics)
+4. The pose data (x, y, z, roll, pitch, yaw) will appear as time series plots
+
+PlotJuggler provides advanced features like:
+- Real-time plotting with thousands of data points
+- Data transformation and filtering
+- Layout saving and sharing
+- Export capabilities
+
+## Hardware Design
+
+The flexure system design is available as an Onshape CAD model:
+
+**[Flexure System CAD Model](https://cad.onshape.com/documents/3e860df39a3a0136b6650a0b/w/78ad68392459b8d68de64f2d/e/6d504a39dfdeb2eaddb9b7d0?configuration=Dual_Marker%3Dfalse%3BDual_Marker_Size%3D0.004%2Bmeter%3BFit_tolerance%3D0.1%3BFlexure_Height%3D0.035%2Bmeter%3BFlexure_Loop_Diameter%3D0.01%2Bmeter%3BFlexure_Loop_Fillet%3D0.001%2Bmeter%3BFlexure_Thickness_Height%3D0.0014%2Bmeter%3BFlexure_Thickness_Width%3D0.0014%2Bmeter%3BFlexure_Width%3D0.035%2Bmeter%3BPlatform_Size%3D0.015%2Bmeter%3BPlatform_Wall_Thickness%3D8.0E-4%2Bmeter%3BVersion%3D&renderMode=0&uiState=6852e49db5b2c71c25c7c021)**
+
+The design includes:
+- Configurable flexure parameters (height, width, thickness)
+- Platform size and wall thickness options
+- Dual marker support (configurable)
+- Fit tolerance settings
+- 3D printable geometry
+
 ## Troubleshooting
 - If you see errors about `cv2.aruco`, make sure you have the correct OpenCV package:
   ```bash
