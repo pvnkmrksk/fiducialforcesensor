@@ -18,7 +18,7 @@ This project implements a low-cost, vision-based 6-axis force-torque sensor usin
 
 3. Create and activate a virtual environment:
    ```bash
-   uv venv
+   uv venv --python 3.11
    source .venv/bin/activate  # On Linux/macOS
    # or
    .venv\Scripts\activate  # On Windows
