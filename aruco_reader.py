@@ -32,13 +32,13 @@ Examples:
     parser.add_argument(
         "--width",
         type=int,
-        default=1280,
+        default=800,
         help="Camera width resolution (default: 1280)",
     )
     parser.add_argument(
         "--height",
         type=int,
-        default=960,
+        default=600,
         help="Camera height resolution (default: 960)",
     )
     parser.add_argument(
@@ -85,8 +85,8 @@ Examples:
     parser.add_argument(
         "--subset-id",
         type=int,
-        default=64,
-        help="ArUco marker subset ID for DICT_ARUCO_ORIGINAL (default: 64)",
+        default=None,
+        help="ArUco marker subset ID for DICT_ARUCO_ORIGINAL (default: None)",
     )
     parser.add_argument(
         "--baseline-frames",
@@ -130,10 +130,10 @@ def init_zmq(port):
 
 
 # read in camera matrix and distortion coefficients
-with np.load("camera_calibration_results.npz") as X:
-    camMatrix, distCoeffs, _, _ = [
-        X[i] for i in ("camera_matrix", "dist_coeffs", "rvecs", "tvecs")
-    ]
+with open("calib_3937__0c45_6366__800.json", "r") as f:
+    calib_data = json.load(f)
+    camMatrix = np.array(calib_data["camera_matrix"]["data"]).reshape(3, 3)
+    distCoeffs = np.array(calib_data["distortion_coefficients"]["data"]).reshape(5, 1)
 
 # ... (keep the utility functions as is)
 
@@ -184,10 +184,12 @@ def initCamera(
 
     # initialize webcam capture object
     cap = cv2.VideoCapture(camera)
-    cap.set(
-        cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G")
-    )  # depends on fourcc available camera
+    if not cap.isOpened():
+        raise RuntimeError(f"Failed to open camera {camera}")
 
+    # Try to set MJPG format first
+    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc("M", "J", "P", "G"))
+    
     # set resolution
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
@@ -195,7 +197,8 @@ def initCamera(
     # set fps
     cap.set(cv2.CAP_PROP_FPS, fps)
 
-    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)
+    # Try to set auto exposure to manual mode
+    cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 1)  # 1 = manual mode
 
     # set exposure
     cap.set(cv2.CAP_PROP_EXPOSURE, exposure)
@@ -209,12 +212,23 @@ def initCamera(
 
     # set contrast
     cap.set(cv2.CAP_PROP_CONTRAST, contrast)
+
+    # Verify camera settings
+    actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+    actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+
+    if actual_width == 0 or actual_height == 0:
+        raise RuntimeError("Failed to set camera resolution")
+
     return cap
 
 
 def read_image(cap):
     # blocks until the entire frame is read
     success, img = cap.read()
+    if not success or img is None:
+        raise RuntimeError("Failed to capture frame from camera")
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     return img, gray
 
@@ -507,137 +521,142 @@ def main():
     print(f"ZMQ port: {args.port}")
     print("================================")
 
-    # Initialize ZMQ socket
-    socket = init_zmq(args.port)
+    try:
+        # Initialize ZMQ socket
+        socket = init_zmq(args.port)
 
-    cv2.setUseOptimized(True)
-    cv2.setNumThreads(8)  # Adjust the number of threads based on your GPU
+        cv2.setUseOptimized(True)
+        cv2.setNumThreads(8)  # Adjust the number of threads based on your GPU
 
-    tagSize = args.tag_size  # Get tag size from args
+        tagSize = args.tag_size  # Get tag size from args
 
-    # Initialize camera with parameters from args
-    cap = initCamera(
-        camera=args.camera,
-        width=args.width,
-        height=args.height,
-        fps=args.fps,
-        exposure=args.exposure,
-        gain=args.gain,
-        gamma=args.gamma,
-        brightness=args.brightness,
-        contrast=args.contrast,
-    )
+        # Initialize camera with parameters from args
+        cap = initCamera(
+            camera=args.camera,
+            width=args.width,
+            height=args.height,
+            fps=args.fps,
+            exposure=args.exposure,
+            gain=args.gain,
+            gamma=args.gamma,
+            brightness=args.brightness,
+            contrast=args.contrast,
+        )
 
-    # Verify camera configuration
-    actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-    actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
-    actual_fps = cap.get(cv2.CAP_PROP_FPS)
+        # Verify camera configuration
+        actual_width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        actual_height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        actual_fps = cap.get(cv2.CAP_PROP_FPS)
 
-    print("\n=== Camera Configuration Verification ===")
-    print(f"Requested resolution: {args.width}x{args.height}")
-    print(f"Actual resolution: {actual_width}x{actual_height}")
-    print(f"Requested FPS: {args.fps}")
-    print(f"Actual FPS: {actual_fps}")
-    print("=======================================\n")
+        print("\n=== Camera Configuration Verification ===")
+        print(f"Requested resolution: {args.width}x{args.height}")
+        print(f"Actual resolution: {actual_width}x{actual_height}")
+        print(f"Requested FPS: {args.fps}")
+        print(f"Actual FPS: {actual_fps}")
+        print("=======================================\n")
 
-    # Get the ArUco dictionary based on args
-    dict_mapping = {
-        "DICT_4X4_50": aruco.DICT_4X4_50,
-        "DICT_4X4_100": aruco.DICT_4X4_100,
-        "DICT_4X4_250": aruco.DICT_4X4_250,
-        "DICT_4X4_1000": aruco.DICT_4X4_1000,
-        "DICT_5X5_50": aruco.DICT_5X5_50,
-        "DICT_5X5_100": aruco.DICT_5X5_100,
-        "DICT_5X5_250": aruco.DICT_5X5_250,
-        "DICT_5X5_1000": aruco.DICT_5X5_1000,
-        "DICT_6X6_50": aruco.DICT_6X6_50,
-        "DICT_6X6_100": aruco.DICT_6X6_100,
-        "DICT_6X6_250": aruco.DICT_6X6_250,
-        "DICT_6X6_1000": aruco.DICT_6X6_1000,
-        "DICT_7X7_50": aruco.DICT_7X7_50,
-        "DICT_7X7_100": aruco.DICT_7X7_100,
-        "DICT_7X7_250": aruco.DICT_7X7_250,
-        "DICT_7X7_1000": aruco.DICT_7X7_1000,
-        "DICT_ARUCO_ORIGINAL": aruco.DICT_ARUCO_ORIGINAL,
-    }
+        # Get the ArUco dictionary based on args
+        dict_mapping = {
+            "DICT_4X4_50": aruco.DICT_4X4_50,
+            "DICT_4X4_100": aruco.DICT_4X4_100,
+            "DICT_4X4_250": aruco.DICT_4X4_250,
+            "DICT_4X4_1000": aruco.DICT_4X4_1000,
+            "DICT_5X5_50": aruco.DICT_5X5_50,
+            "DICT_5X5_100": aruco.DICT_5X5_100,
+            "DICT_5X5_250": aruco.DICT_5X5_250,
+            "DICT_5X5_1000": aruco.DICT_5X5_1000,
+            "DICT_6X6_50": aruco.DICT_6X6_50,
+            "DICT_6X6_100": aruco.DICT_6X6_100,
+            "DICT_6X6_250": aruco.DICT_6X6_250,
+            "DICT_6X6_1000": aruco.DICT_6X6_1000,
+            "DICT_7X7_50": aruco.DICT_7X7_50,
+            "DICT_7X7_100": aruco.DICT_7X7_100,
+            "DICT_7X7_250": aruco.DICT_7X7_250,
+            "DICT_7X7_1000": aruco.DICT_7X7_1000,
+            "DICT_ARUCO_ORIGINAL": aruco.DICT_ARUCO_ORIGINAL,
+        }
 
-    dict_id = dict_mapping[args.aruco_dict]
-    aruco_dict = aruco.Dictionary_get(dict_id)
+        dict_id = dict_mapping[args.aruco_dict]
+        aruco_dict = aruco.Dictionary_get(dict_id)
 
-    # Apply subset ID if specified, regardless of dictionary type
-    if args.subset_id is not None:
-        try:
-            aruco_dict.bytesList = aruco_dict.bytesList[args.subset_id]
-            print(f"Applied subset ID {args.subset_id} to dictionary")
-        except Exception as e:
-            print(f"Warning: Could not apply subset ID {args.subset_id}: {e}")
-            print("Continuing with full dictionary...")
+        # Apply subset ID if specified, regardless of dictionary type
+        if args.subset_id is not None:
+            try:
+                aruco_dict.bytesList = aruco_dict.bytesList[args.subset_id]
+                print(f"Applied subset ID {args.subset_id} to dictionary")
+            except Exception as e:
+                print(f"Warning: Could not apply subset ID {args.subset_id}: {e}")
+                print("Continuing with full dictionary...")
 
-    aruco_params = aruco.DetectorParameters_create()
+        aruco_params = aruco.DetectorParameters_create()
 
-    aruco_params.adaptiveThreshWinSizeMin = 3
-    aruco_params.adaptiveThreshWinSizeMax = 23
-    aruco_params.adaptiveThreshWinSizeStep = 10
+        aruco_params.adaptiveThreshWinSizeMin = 3
+        aruco_params.adaptiveThreshWinSizeMax = 23
+        aruco_params.adaptiveThreshWinSizeStep = 10
 
-    rots_bl, tvecs_bl = get_baseline(
-        cap,
-        aruco_dict,
-        aruco_params,
-        tagSize,
-        frames=args.baseline_frames,
-        socket=socket,
-    )
+        rots_bl, tvecs_bl = get_baseline(
+            cap,
+            aruco_dict,
+            aruco_params,
+            tagSize,
+            frames=args.baseline_frames,
+            socket=socket,
+        )
 
-    avg_fps, cur_fps, frames = 0, 0, 0
-    prev_frame_time = time.time()
-    start_time = prev_frame_time
+        avg_fps, cur_fps, frames = 0, 0, 0
+        prev_frame_time = time.time()
+        start_time = prev_frame_time
 
-    length = 100
-    rots_q = np.zeros((length, 3))
-    tvecs_q = np.zeros((length, 3))
+        length = 100
+        rots_q = np.zeros((length, 3))
+        tvecs_q = np.zeros((length, 3))
 
-    time_header = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        time_header = datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
 
-    frame_queue = Queue(maxsize=1)
-    camera_io = threading.Thread(target=camera_io_thread, args=(cap, frame_queue))
-    camera_io.daemon = True
-    camera_io.start()
+        frame_queue = Queue(maxsize=1)
+        camera_io = threading.Thread(target=camera_io_thread, args=(cap, frame_queue))
+        camera_io.daemon = True
+        camera_io.start()
 
-    prev_marker_info = None
-    while True:
-        frames += 1
-        try:
-            img, gray = frame_queue.get()
-            rots, tvecs, marker_info = read_get_pose(
-                img,
-                gray,
-                aruco_dict,
-                aruco_params,
-                rots_bl,
-                tvecs_bl,
-                tagSize,
-                prev_marker_info,
-                args.min_pixel_size,
-                args.max_pixel_size,
-                args.debug,
-            )
-            if marker_info is not None:
-                prev_marker_info = marker_info
-        except Exception as e:
-            print(e)
-            continue
+        prev_marker_info = None
+        while True:
+            frames += 1
+            try:
+                img, gray = frame_queue.get()
+                rots, tvecs, marker_info = read_get_pose(
+                    img,
+                    gray,
+                    aruco_dict,
+                    aruco_params,
+                    rots_bl,
+                    tvecs_bl,
+                    tagSize,
+                    prev_marker_info,
+                    args.min_pixel_size,
+                    args.max_pixel_size,
+                    args.debug,
+                )
+                if marker_info is not None:
+                    prev_marker_info = marker_info
+            except Exception as e:
+                print(f"Error processing frame: {e}")
+                continue
 
-        raw = rots.copy()
-        send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=raw)
+            raw = rots.copy()
+            send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=raw)
 
-        cv2.imshow("webcam", img)
+            cv2.imshow("webcam", img)
 
-        key = cv2.waitKey(1)
-        if key == 27:
-            break
+            key = cv2.waitKey(1)
+            if key == 27:
+                break
 
-    cv2.destroyAllWindows()
-    cap.release()
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        cv2.destroyAllWindows()
+        if 'cap' in locals():
+            cap.release()
 
 
 # ... (keep the profiling code as is)
