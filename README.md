@@ -6,7 +6,7 @@ Supplementary Video and Presentation Slides: https://sites.google.com/view/fiduc
 
 ## Installation
 
-1. Install uv (Python package installer):
+1. Install [uv](https://github.com/astral-sh/uv) (Python package installer):
 ```bash
 curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
@@ -24,16 +24,50 @@ source .venv/bin/activate  # On Linux/macOS
 uv pip install -r requirements.txt
 ```
 
+## Dependencies
+- numpy
+- opencv-contrib-python (for ArUco support)
+- pyzmq
+- click
+
+If you encounter issues with `cv2.aruco`, ensure you have `opencv-contrib-python` installed (not just `opencv-python`).
+
 ## Usage
 
-1. Run camera calibration (if needed):
+### Camera Calibration (optional, but recommended for best accuracy)
 ```bash
 python camera_calibration.py
 ```
+This will guide you through capturing calibration images and saving calibration data.
 
-2. Run the ArUco marker detection:
+### Run ArUco Marker Detection
 ```bash
 python aruco_reader.py
 ```
+This will start the main detection loop with the following defaults:
+- Camera: 0
+- Resolution: 800x600
+- FPS: 120
+- Tag size: 0.01 m
+- ZMQ port: 9872
+- ArUco dictionary: DICT_ARUCO_ORIGINAL
 
-The system will detect ArUco markers and publish pose data via ZMQ on port 9872.
+#### Example: Custom Arguments
+```bash
+python aruco_reader.py --width 1280 --height 960 --fps 60 --tag-size 0.05 --aruco-dict DICT_5X5_100 --port 5555
+```
+
+#### Output
+The system will detect ArUco markers and publish pose data (x, y, z, roll, pitch, yaw) via ZMQ on the specified port.
+
+## Troubleshooting
+- If you see errors about `cv2.aruco`, make sure you have the correct OpenCV package:
+```bash
+pip uninstall opencv-python
+pip install opencv-contrib-python
+```
+- If the camera does not open, check your device index (`--camera`) and permissions.
+- For best results, calibrate your camera and use the generated calibration file.
+
+## Citation
+If you use this code, please cite the ICRA2020 paper linked above.

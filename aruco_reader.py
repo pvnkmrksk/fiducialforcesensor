@@ -12,6 +12,12 @@ from queue import Queue
 
 # Set up argument parser
 def parse_args():
+    """
+    Parse command-line arguments for ArUco marker detection and pose estimation.
+
+    Returns:
+        argparse.Namespace: Parsed command-line arguments.
+    """
     parser = argparse.ArgumentParser(
         description="ArUco marker detection and pose estimation",
         epilog="""
@@ -33,13 +39,13 @@ Examples:
         "--width",
         type=int,
         default=800,
-        help="Camera width resolution (default: 1280)",
+        help="Camera width resolution (default: 800)",
     )
     parser.add_argument(
         "--height",
         type=int,
         default=600,
-        help="Camera height resolution (default: 960)",
+        help="Camera height resolution (default: 600)",
     )
     parser.add_argument(
         "--fps", type=int, default=120, help="Camera FPS (default: 120)"
@@ -104,7 +110,7 @@ Examples:
         "--min-pixel-size",
         type=int,
         default=250,
-        help="Minimum marker side length in pixels (default: 100)",
+        help="Minimum marker side length in pixels (default: 250)",
     )
     parser.add_argument(
         "--max-pixel-size",
@@ -123,6 +129,15 @@ Examples:
 
 # Initialize ZMQ context - move this to main to use the port from args
 def init_zmq(port):
+    """
+    Initialize a ZMQ PUB socket on the given port.
+
+    Args:
+        port (int): Port number to bind the ZMQ socket.
+
+    Returns:
+        zmq.Socket: The initialized PUB socket.
+    """
     context = zmq.Context()
     socket = context.socket(zmq.PUB)
     socket.bind(f"tcp://*:{port}")
@@ -139,6 +154,15 @@ with open("calib_3937__0c45_6366__800.json", "r") as f:
 
 
 def isRotationMatrix(R):
+    """
+    Check if a matrix is a valid rotation matrix.
+
+    Args:
+        R (np.ndarray): 3x3 matrix to check.
+
+    Returns:
+        bool: True if R is a valid rotation matrix, False otherwise.
+    """
     Rt = np.transpose(R)
     shouldBeIdentity = np.dot(Rt, R)
     I = np.identity(3, dtype=R.dtype)
@@ -147,6 +171,15 @@ def isRotationMatrix(R):
 
 
 def rotationMatrixToEulerAngles(R):
+    """
+    Convert a rotation matrix to Euler angles (roll, pitch, yaw).
+
+    Args:
+        R (np.ndarray): 3x3 rotation matrix.
+
+    Returns:
+        np.ndarray: Euler angles in degrees (roll, pitch, yaw).
+    """
     assert isRotationMatrix(R)
 
     sy = np.sqrt(R[0, 0] * R[0, 0] + R[1, 0] * R[1, 0])
@@ -170,15 +203,32 @@ def rotationMatrixToEulerAngles(R):
 
 def initCamera(
     camera=0,
-    width=320,
-    height=240,
-    fps=100,
-    exposure=150,
-    gain=40,
-    gamma=160,
+    width=800,
+    height=600,
+    fps=120,
+    exposure=1,
+    gain=1,
+    gamma=72,
     brightness=0,
     contrast=32,
 ):
+    """
+    Initialize the camera with the given parameters.
+
+    Args:
+        camera (int): Camera device ID.
+        width (int): Camera width resolution.
+        height (int): Camera height resolution.
+        fps (int): Camera frames per second.
+        exposure (int): Camera exposure value.
+        gain (int): Camera gain value.
+        gamma (int): Camera gamma value.
+        brightness (int): Camera brightness value.
+        contrast (int): Camera contrast value.
+
+    Returns:
+        cv2.VideoCapture: Initialized camera capture object.
+    """
     # create display window
     cv2.namedWindow("webcam", cv2.WINDOW_NORMAL)
 
@@ -225,6 +275,15 @@ def initCamera(
 
 
 def read_image(cap):
+    """
+    Capture a frame from the camera and convert it to grayscale.
+
+    Args:
+        cap (cv2.VideoCapture): Camera capture object.
+
+    Returns:
+        tuple: (img, gray) where img is the BGR image and gray is the grayscale image.
+    """
     # blocks until the entire frame is read
     success, img = cap.read()
     if not success or img is None:
@@ -240,10 +299,27 @@ def get_pose(
     aruco_params,
     tagSize,
     prev_marker_info=None,
-    min_pixel_size=100,
+    min_pixel_size=250,
     max_pixel_size=700,
     debug=False,
 ):
+    """
+    Detect ArUco markers and estimate the pose of the selected marker.
+
+    Args:
+        img (np.ndarray): BGR image.
+        gray (np.ndarray): Grayscale image.
+        aruco_dict: ArUco dictionary object.
+        aruco_params: ArUco detector parameters.
+        tagSize (float): Size of the ArUco tag in meters.
+        prev_marker_info (dict, optional): Previous marker info for tracking. Defaults to None.
+        min_pixel_size (int, optional): Minimum marker side length in pixels. Defaults to 250.
+        max_pixel_size (int, optional): Maximum marker side length in pixels. Defaults to 700.
+        debug (bool, optional): Enable debug visualization. Defaults to False.
+
+    Returns:
+        tuple: (rots, tvecs, selected_marker) where rots and tvecs are arrays, selected_marker is marker info dict.
+    """
     corners, ids, rejectedImgPoints = aruco.detectMarkers(
         gray, aruco_dict, parameters=aruco_params
     )
@@ -368,10 +444,29 @@ def read_get_pose(
     tvecs_bl,
     tagSize,
     prev_marker_info=None,
-    min_pixel_size=100,
+    min_pixel_size=250,
     max_pixel_size=700,
     debug=False,
 ):
+    """
+    Detect pose and subtract baseline rotation and translation.
+
+    Args:
+        img (np.ndarray): BGR image.
+        gray (np.ndarray): Grayscale image.
+        aruco_dict: ArUco dictionary object.
+        aruco_params: ArUco detector parameters.
+        rots_bl (np.ndarray): Baseline rotation.
+        tvecs_bl (np.ndarray): Baseline translation.
+        tagSize (float): Size of the ArUco tag in meters.
+        prev_marker_info (dict, optional): Previous marker info for tracking. Defaults to None.
+        min_pixel_size (int, optional): Minimum marker side length in pixels. Defaults to 250.
+        max_pixel_size (int, optional): Maximum marker side length in pixels. Defaults to 700.
+        debug (bool, optional): Enable debug visualization. Defaults to False.
+
+    Returns:
+        tuple: (rots, tvecs, marker_info) where rots and tvecs are arrays, marker_info is marker info dict.
+    """
     rots, tvecs, marker_info = get_pose(
         img,
         gray,
@@ -394,7 +489,21 @@ def read_get_pose(
     return rots, tvecs, marker_info
 
 
-def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10, socket=None):
+def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=500, socket=None):
+    """
+    Calculate the baseline pose by averaging over a number of frames.
+
+    Args:
+        cap (cv2.VideoCapture): Camera capture object.
+        aruco_dict: ArUco dictionary object.
+        aruco_params: ArUco detector parameters.
+        tagSize (float): Size of the ArUco tag in meters.
+        frames (int, optional): Number of frames to average. Defaults to 500.
+        socket (zmq.Socket, optional): ZMQ socket for publishing pose. Defaults to None.
+
+    Returns:
+        tuple: (rots_bl, tvecs_bl) baseline rotation and translation arrays.
+    """
     rots = []
     tvecs = []
 
@@ -410,8 +519,6 @@ def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10, socket=None)
             gray,
             aruco_dict,
             aruco_params,
-            rots_bl,
-            tvecs_bl,
             tagSize,
             prev_marker_info,
         )
@@ -434,6 +541,17 @@ def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=10, socket=None)
 
 
 def send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=None):
+    """
+    Send pose data over ZMQ as a JSON object.
+
+    Args:
+        socket (zmq.Socket): ZMQ PUB socket.
+        rots (array-like): Rotation (roll, pitch, yaw).
+        tvecs (array-like): Translation (x, y, z).
+        avg_fps (float): Average FPS (not used in message).
+        cur_fps (float): Current FPS (not used in message).
+        raw (array-like, optional): Raw rotation data. Defaults to None.
+    """
     if raw is None:
         raw = [0, 0, 0]
 
@@ -456,19 +574,16 @@ def send_pose(socket, rots, tvecs, avg_fps, cur_fps, raw=None):
 
 def med_filter(q, data, length=11, threshold=3):
     """
-    This function performs a median filter on data. It takes in a queue, data,
-    length, and threshold. The length is the size of the queue and the threshold
-    is the z score threshold for which to replace the data in the queue with the
-    last element in the queue. The function returns the median of the queue.
+    Perform a median filter on data with optional z-score outlier rejection.
 
-    Parameters:
-    q: Queue
-    data: Number
-    length: Number
-    threshold: Number
+    Args:
+        q (np.ndarray): Queue of previous data.
+        data (array-like): New data to filter.
+        length (int, optional): Size of the queue. Defaults to 11.
+        threshold (float, optional): Z-score threshold for outlier rejection. Defaults to 3.
 
     Returns:
-    Number: the median of the queue
+        tuple: (q, median) where q is the updated queue and median is the filtered value.
     """
 
     # if any of the items in the data is None, replace data with last element in queue
@@ -495,6 +610,13 @@ def med_filter(q, data, length=11, threshold=3):
 
 
 def camera_io_thread(cap, frame_queue):
+    """
+    Thread function to continuously read frames from the camera and put them in a queue.
+
+    Args:
+        cap (cv2.VideoCapture): Camera capture object.
+        frame_queue (Queue): Queue to put (img, gray) tuples.
+    """
     while True:
         try:
             img, gray = read_image(cap)
@@ -504,6 +626,10 @@ def camera_io_thread(cap, frame_queue):
 
 
 def main():
+    """
+    Main entry point for ArUco marker detection and pose estimation.
+    Parses arguments, initializes camera and ZMQ, and runs the detection loop.
+    """
     # Parse command line arguments
     args = parse_args()
 
