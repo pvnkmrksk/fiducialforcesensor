@@ -22,15 +22,25 @@ def parse_args():
         description="ArUco marker detection and pose estimation",
         epilog="""
 Examples:
-  python aruco_reader.py --tag-size 0.05 --camera 1 --width 640 --height 480
+  python aruco_reader.py                    # Use all defaults
+  python aruco_reader.py 0.05              # Set tag size to 0.05m
+  python aruco_reader.py --tag-size 0.05   # Same as above
+  python aruco_reader.py --camera 1 --width 640 --height 480
   python aruco_reader.py --aruco-dict DICT_5X5_100 --port 5555
 """,
     )
     parser.add_argument(
-        "--tag-size",
+        "tag_size",
+        nargs="?",
         type=float,
         default=0.01,
-        help="Size of the ArUco tag in meters (default: 0.01)",
+        help="Size of the ArUco tag in meters (default: 0.01, optional)",
+    )
+    parser.add_argument(
+        "--tag-size",
+        type=float,
+        dest="tag_size_alt",
+        help="Alternative way to specify tag size (same as positional argument)",
     )
     parser.add_argument(
         "--camera", type=int, default=0, help="Camera device ID (default: 0)"
@@ -124,7 +134,13 @@ Examples:
         help="Enable debug visualization of rejected markers",
     )
 
-    return parser.parse_args()
+    args = parser.parse_args()
+    
+    # Handle the alternative tag-size argument
+    if args.tag_size_alt is not None:
+        args.tag_size = args.tag_size_alt
+    
+    return args
 
 
 # Initialize ZMQ context - move this to main to use the port from args
@@ -520,6 +536,8 @@ def get_baseline(cap, aruco_dict, aruco_params, tagSize, frames=500, socket=None
             aruco_dict,
             aruco_params,
             tagSize,
+            rots_bl,
+            tvecs_bl,
             prev_marker_info,
         )
 
