@@ -1,8 +1,7 @@
-# fiducialforcesensor
-for ICRA2020 paper: Low-Cost Fiducial-based 6-Axis Force-Torque Sensor
+## Introduction
+# Fiducial Force Sensor
 
-Paper: https://arxiv.org/abs/2005.14250
-Supplementary Video and Presentation Slides: https://sites.google.com/view/fiducialforcesensor
+This project implements a low-cost, vision-based 6-axis force-torque sensor using ArUco fiducial markers and a standard camera. The approach tracks the 3D pose of a marker attached to a compliant structure, inferring forces and torques from observed displacements. The system leverages OpenCV's ArUco module for robust marker detection and pose estimation. Calibration routines are provided for both the camera and the flexure structure. Real-time pose data is published via ZMQ for integration with robotics and data acquisition systems.
 
 ## Installation
 
@@ -70,4 +69,11 @@ pip install opencv-contrib-python
 - For best results, calibrate your camera and use the generated calibration file.
 
 ## Citation
+
+# fiducialforcesensor
+for ICRA2020 paper: Low-Cost Fiducial-based 6-Axis Force-Torque Sensor
+
+Paper: https://arxiv.org/abs/2005.14250
+Supplementary Video and Presentation Slides: https://sites.google.com/view/fiducialforcesensor
+
 If you use this code, please cite the ICRA2020 paper linked above.
